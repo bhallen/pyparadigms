@@ -7,27 +7,44 @@ import csv
 import aligner
 import hypothesize
 import phoment
+import gbr
 
 
-alr = aligner.Aligner(feature_file='en_features.txt', sub_penalty=3.0, tolerance=1.0)
+alr = aligner.Aligner(feature_file='japanese_features.txt', sub_penalty=3.0, tolerance=1.0)
 
-alignments = []
+lex = gbr.Lexicon('JP_paradigms_small.txt')
 
-with open('en_ex_train.txt') as training_file:
-    trainingreader = csv.reader(training_file, delimiter='\t')
-    training = [line for line in trainingreader if len(line) > 0]
-    training = [line[:2]+[float(line[2])] if len(line) == 3 else line[:2]+[1.0] for line in training]
+## Create list of *OBSERVED* MPS tuples
+lex.create_cells()
 
-    for triple in training:
-        for alignment in alr.align(triple[0].split(' '), triple[1].split(' ')): # To-do: trim any extra spaces off
-            alignments.append([alignment]+[triple[2]])
+## Create list of all features (bases or base-derivative mappings) to be given weights by GBR
+lex.create_gbr_features()
 
-    reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
+sll_inputs = {}
+for bf,df in lex.gbr_features:
+    one_sll_input = []
+    for base_entry in lex.select_subset(bf):
+        for derivative_entry in lex.select_subset(df):
+            if base_entry['lexeme'] == derivative_entry['lexeme']:
+                one_sll_input.append((base_entry['lexeme'], base_entry['form'], derivative_entry['form']))
+    sll_inputs[(bf,df)] = one_sll_input
 
-    sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
+for one_input in sll_inputs:
+    print('\n\n')
+    print(one_input)
+    for pair in sll_inputs[one_input]:
+        alignments = []
+        for alignment in alr.align(pair[1].split(' '), pair[2].split(' ')):
+            alignments.append([alignment]+[1.0]) # add support for reading probabilities in from the inputs (rather than assigning all observed forms 1.0)
 
-    with open('en_constraints.txt') as con_file:
-        conreader = csv.reader(con_file, delimiter='\t')
-        constraints = [c[0] for c in conreader if len(c) > 0]
+        reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
 
-        sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])
+        sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
+
+        print(sublexicons)
+
+        # with open('en_constraints.txt') as con_file:
+        #     conreader = csv.reader(con_file, delimiter='\t')
+        #     constraints = [c[0] for c in conreader if len(c) > 0]
+
+        #     sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])
