@@ -10,7 +10,7 @@ import phoment
 import gbr
 
 
-alr = aligner.Aligner(feature_file='japanese_features.txt', sub_penalty=3.0, tolerance=1.0)
+alr = aligner.Aligner(feature_file='japanese_features.txt', sub_penalty=4.0, tolerance=1.0)
 
 lex = gbr.Lexicon('JP_paradigms_small.txt')
 
@@ -32,19 +32,34 @@ for bf,df in lex.gbr_features:
 for one_input in sll_inputs:
     print('\n\n')
     print(one_input)
+    all_alignments = []
     for pair in sll_inputs[one_input]:
         alignments = []
         for alignment in alr.align(pair[1].split(' '), pair[2].split(' ')):
-            alignments.append([alignment]+[1.0]) # add support for reading probabilities in from the inputs (rather than assigning all observed forms 1.0)
+            alignments.append(alignment+[1.0]) # add support for reading probabilities in from the inputs (rather than assigning all observed forms 1.0)
 
-        reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
+        scored_alignments = []
+        for a in alignments:
+            scored_alignments.append((a[0], a[1]*alr.check_cohesion(a[0])))
+        scored_alignments.sort(key=lambda x: x[1])
 
-        sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
+        for a in scored_alignments:
+            alr.display_alignment(a[0])
+            print(a[1])
 
-        print(sublexicons)
+        all_alignments.append(scored_alignments) # add ability to skim off only best scoring alignments
 
-        # with open('en_constraints.txt') as con_file:
-        #     conreader = csv.reader(con_file, delimiter='\t')
-        #     constraints = [c[0] for c in conreader if len(c) > 0]
 
-        #     sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])
+    reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
+
+    sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
+
+    print(sublexicons)
+
+
+
+    # with open('en_constraints.txt') as con_file:
+    #     conreader = csv.reader(con_file, delimiter='\t')
+    #     constraints = [c[0] for c in conreader if len(c) > 0]
+
+    #     sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])

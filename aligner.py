@@ -142,24 +142,34 @@ class Aligner(object):
                 return int(segment1!=segment2) * self.sub_penalty   # or should this be addition (with, in this case, a boolean condition)?
 
 
+    def check_cohesion(self, alignment):
+        """Return a multiplier that indicates how lacking cohesion and morphologically plausibility an alignment is, as measured by the number of separate morpheme pieces it hypothesizes.
+        """
+        multiplier = 0
+        for i in range(0, len(alignment)-1):
+            if alignment[i]['dir'] != alignment[i+1]['dir']:
+                multiplier += 1
+        return multiplier
+
+
     def generate_alignments(self, seq1, seq2, d):
 
-        def advance_alignment(so_far, x, y):
+        def advance_alignment(so_far, x, y, score):
             if x > 0 or y > 0:
                 if d[x][y]['aboveleft']:
                     current_element = {'elem1': seq1[x-1], 'elem2': seq2[y-1], 'dir': 'aboveleft'}
-                    queued_ready_objs.append(([current_element] + so_far, x-1, y-1))
+                    queued_ready_objs.append(([current_element] + so_far, x-1, y-1, score+d[x][y]['f']))
                 if d[x][y]['above']:
                     current_element = {'elem1': None, 'elem2': seq2[y-1], 'dir': 'above'}
-                    queued_ready_objs.append(([current_element] + so_far, x, y-1))
+                    queued_ready_objs.append(([current_element] + so_far, x, y-1, score+d[x][y]['f']))
                 if d[x][y]['left']:
                     current_element = {'elem1': seq1[x-1], 'elem2': None, 'dir': 'left'}
-                    queued_ready_objs.append(([current_element] + so_far, x-1, y))
+                    queued_ready_objs.append(([current_element] + so_far, x-1, y, score+d[x][y]['f']))
             else:
-                alignments.append(so_far)
+                alignments.append([so_far, score])
 
         alignments = []
-        queued_ready_objs = [([], len(seq1), len(seq2))]
+        queued_ready_objs = [([], len(seq1), len(seq2), 0)]
         while queued_ready_objs:
             advance_alignment(*queued_ready_objs[0])
             queued_ready_objs = queued_ready_objs[1:]
@@ -179,3 +189,5 @@ class Aligner(object):
 
         print(' '.join(top_list))
         print(' '.join(bottom_list))
+
+    
