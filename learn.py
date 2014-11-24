@@ -30,8 +30,6 @@ for bf,df in lex.gbr_features:
     sll_inputs[(bf,df)] = one_sll_input
 
 for one_input in sll_inputs:
-    print('\n\n')
-    print(one_input)
     all_alignments = []
     for pair in sll_inputs[one_input]:
         alignments = []
@@ -40,21 +38,23 @@ for one_input in sll_inputs:
 
         scored_alignments = []
         for a in alignments:
-            scored_alignments.append((a[0], a[1]*alr.check_cohesion(a[0])))
+            final_score = a[1]/alr.check_cohesion(a[0])/len(a[0]) # should this really divide by the length of the alignment?
+            scored_alignments.append((a[0], final_score))
         scored_alignments.sort(key=lambda x: x[1])
+        scored_alignments.reverse()
 
         for a in scored_alignments:
             alr.display_alignment(a[0])
             print(a[1])
 
-        all_alignments.append(scored_alignments) # add ability to skim off only best scoring alignments
+        all_alignments.append(scored_alignments) # TO-DO: add ability to skim off only best scoring alignments
 
+ 
+    # reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
 
-    reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(alignments)
+    # sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
 
-    sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
-
-    print(sublexicons)
+    # print(sublexicons)
 
 
 

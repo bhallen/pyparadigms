@@ -143,13 +143,13 @@ class Aligner(object):
 
 
     def check_cohesion(self, alignment):
-        """Return a multiplier that indicates how lacking cohesion and morphologically plausibility an alignment is, as measured by the number of separate morpheme pieces it hypothesizes.
+        """Return a divisor that indicates how lacking cohesion and morphologically plausibility an alignment is, as measured by the number of separate morpheme pieces it hypothesizes.
         """
-        multiplier = 0
+        divisor = 0.0
         for i in range(0, len(alignment)-1):
             if alignment[i]['dir'] != alignment[i+1]['dir']:
-                multiplier += 1
-        return multiplier
+                divisor += 1.0
+        return divisor
 
 
     def generate_alignments(self, seq1, seq2, d):
@@ -158,13 +158,13 @@ class Aligner(object):
             if x > 0 or y > 0:
                 if d[x][y]['aboveleft']:
                     current_element = {'elem1': seq1[x-1], 'elem2': seq2[y-1], 'dir': 'aboveleft'}
-                    queued_ready_objs.append(([current_element] + so_far, x-1, y-1, score+d[x][y]['f']))
+                    queued_ready_objs.append(([current_element] + so_far, x-1, y-1, score+d[x][y]['f']-d[x-1][y-1]['f']))
                 if d[x][y]['above']:
                     current_element = {'elem1': None, 'elem2': seq2[y-1], 'dir': 'above'}
-                    queued_ready_objs.append(([current_element] + so_far, x, y-1, score+d[x][y]['f']))
+                    queued_ready_objs.append(([current_element] + so_far, x, y-1, score+d[x][y]['f']-d[x][y-1]['f']))
                 if d[x][y]['left']:
                     current_element = {'elem1': seq1[x-1], 'elem2': None, 'dir': 'left'}
-                    queued_ready_objs.append(([current_element] + so_far, x-1, y, score+d[x][y]['f']))
+                    queued_ready_objs.append(([current_element] + so_far, x-1, y, score+d[x][y]['f']-d[x-1][y]['f']))
             else:
                 alignments.append([so_far, score])
 
