@@ -145,7 +145,7 @@ class Aligner(object):
     def check_cohesion(self, alignment):
         """Return a divisor that indicates how lacking cohesion and morphologically plausibility an alignment is, as measured by the number of separate morpheme pieces it hypothesizes.
         """
-        divisor = 0.0
+        divisor = 1.0
         for i in range(0, len(alignment)-1):
             if alignment[i]['dir'] != alignment[i+1]['dir']:
                 divisor += 1.0

@@ -50,7 +50,6 @@ class Sublexicon(object):
 
 
 def create_and_reduce_hypotheses(alignments):
-
     unfiltered_hypotheses = []
     all_bd_pairs = []
     for alignment in alignments:
@@ -306,8 +305,29 @@ def add_grammar(sublexicon, constraints):
     sublexicon.weights = phoment.learn_weights(mt)
     sublexicon.constraint_names = constraints
 
-    for ur in mt.tableau:
-        for sr in ur:
-            print(sr)
-
     return (sublexicon, mt)
+
+
+def create_mapping_tableau(sublexicons, megatableaux):
+    new_tableau = {}
+    for s in zip(sublexicons, megatableaux):
+        for af in s[0].associated_forms:
+            if af['base'] in new_tableau:
+                if af['derivative'] in new_tableau[af['base']]:
+                    new_tableau[af['base']][af['derivative']] += s[1].tableau[''][af['base']][2]# Is it right to be adding this?
+                else:
+                    if af['derivative'] != 'incompatible':
+                        new_tableau[af['base']][af['derivative']] = s[1].tableau[''][af['base']][2]
+            else:
+                new_tableau[af['base']] = {}
+                if af['derivative'] != 'incompatible':
+                    new_tableau[af['base']][af['derivative']] = s[1].tableau[''][af['base']][2]
+
+    for base in new_tableau:
+        total = 0
+        for derivative in new_tableau[base]:
+            total += new_tableau[base][derivative]
+        for derivative in new_tableau[base]:
+            new_tableau[base][derivative] /= total
+
+    return new_tableau

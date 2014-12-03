@@ -163,12 +163,12 @@ def learn_weights(mt, l1_mult = 0.0, l2_mult = 1.0, precision = 10000000):
     # Update the mt in place with the new weights
     mt.weights = learned_weights
 
-    # Be sociable
-    print("\nBoom! Weights have been updated:")
-    for i in range(0,len(learned_weights)):
-        print(mt.constraint_names[i],"\t",learned_weights[i])
-    print("\nLog probability of data:", -(nlpwg(learned_weights, mt.tableau))[0])
-    print("")
+    # # Be sociable
+    # print("\nBoom! Weights have been updated:")
+    # for i in range(0,len(learned_weights)):
+    #     print(mt.constraint_names[i],"\t",learned_weights[i])
+    # print("\nLog probability of data:", -(nlpwg(learned_weights, mt.tableau))[0])
+    # print("")
 
     # Return
     return learned_weights
