@@ -3,6 +3,8 @@
 
 import itertools
 import csv
+import numpy as np
+import scipy, scipy.sparse, scipy.optimize
 
 import aligner
 import hypothesize
@@ -12,7 +14,7 @@ import gbr
 
 alr = aligner.Aligner(feature_file='latin_features.txt', sub_penalty=4.0, tolerance=1.0)
 
-lex = gbr.Lexicon('latin_tiny.txt')
+lex = gbr.Lexicon('example_paradigms.txt')
 
 ## Create list of *OBSERVED* MPS tuples
 lex.create_cells()
@@ -29,8 +31,12 @@ for bf,df in lex.gbr_features:
                 one_sll_input.append((base_entry['lexeme'], base_entry['form'], derivative_entry['form']))
     sll_inputs[(bf,df)] = one_sll_input
 
+
+## Create tableaux corresponding to each cell-to-cell mapping and organize them
 new_tab = {(lm,cl):{} for lm in lex.lexemes for cl in lex.cells}
 for one_mapping in sll_inputs:
+    print()
+    print(one_mapping)
     all_alignments = []
     for pair in sll_inputs[one_mapping]:
         alignments = []
@@ -53,7 +59,11 @@ for one_mapping in sll_inputs:
 
     sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
 
-    with open('latin_constraints.txt') as con_file:
+    # for s in sublexicons:
+    #     print(s)
+    #     print(s.associated_forms)
+
+    with open('example_constraints.txt') as con_file:
         conreader = csv.reader(con_file, delimiter='\t')
         constraints = [c[0] for c in conreader if len(c) > 0]
 
@@ -61,33 +71,59 @@ for one_mapping in sll_inputs:
 
     mapping_tableau = hypothesize.create_mapping_tableau(sublexicons, megatableaux)
     for fm in mapping_tableau:
-        lexeme = lex.retrieve_lexeme(fm, one_mapping[0])  # TEMPORARY -- final version must not look up lexeme, but rather maintain it throughout
+        lexeme = lex.retrieve_lexeme(fm, one_mapping[0])  # TEMPORARY -- final version must not look up lexeme, but rather maintain it from the beginning, to ward off homophony issues
         for candidate in mapping_tableau[fm]:
-            if candidate in new_tab[(lexeme,one_mapping[0])]:
-                new_tab[(lexeme,one_mapping[0])][candidate][one_mapping[1]] = mapping_tableau[fm][candidate]
+            if candidate in new_tab[(lexeme,one_mapping[1])]:
+                new_tab[(lexeme,one_mapping[1])][candidate][one_mapping[0]] = mapping_tableau[fm][candidate]
             else:
-                new_tab[(lexeme,one_mapping[0])][candidate] = {one_mapping[1]: mapping_tableau[fm][candidate]}
+                new_tab[(lexeme,one_mapping[1])][candidate] = {one_mapping[0]: mapping_tableau[fm][candidate]}
 
-with open('abc.txt','w') as outf:
-    outf.write('\t\t'+'\t'.join(m for m in [str(f) for f in lex.gbr_features])+'\n')
+
+
+## Create a matrix of predicted probabilities to pass to the optimization function; also make a file with the table. Also make a list of observed probabilities (or, for now, just observed/unobserved)
+with open('output.txt','w') as outf:
+    outf.write('meaning\tform\tobserved\t'+'\t'.join(m for m in [str(f) for f in lex.gbr_features])+'\n')
     A = []
+    obs = []
     for lmc in new_tab:
         print()
         print(lmc)
         for candidate in new_tab[lmc]:
-            print(candidate)
-            print(new_tab[lmc][candidate])
-            row = []
-            outf.write('{}\t{}\t'.format(str(lmc),candidate))
+            # get observed probability
+            row = ['{}\t{}'.format(str(lmc),candidate)]
+            obs_or_not = lex.cells[lmc[1]][lmc[0]] == candidate
+            obs.append(float(obs_or_not))
+            row.append(str(float(obs_or_not)))
+            # get predicted probabilities
+            predicted_probs = []
             for mapping in lex.gbr_features:
                 if mapping[1] == lmc[1] and mapping[0] in new_tab[lmc][candidate]:
-                    row.append(new_tab[lmc][candidate][mapping[0]])
+                    predicted_probs.append(new_tab[lmc][candidate][mapping[0]])
                 else:
-                    row.append(0.0)
-            A.append(row)
-            outf.write('\t'.join([str(fl) for fl in row]))
-            outf.write('\n')
+                    predicted_probs.append(0.0)
+            A.append(predicted_probs)
+            row += [str(fl) for fl in predicted_probs]
+            outf.write('\t'.join(row)+'\n')
 
-# print(A)
+print(lex.cells)
+
+## Learn weights
+A = np.array(A)
+posReals = [(0,25) for wt in range(len(A[0]))]
+
+def objective(wts, cond_prob_matrix, obs_probs, l1_mult=0.0, l2_mult=0.0):
+    exp_probs = scipy.dot(cond_prob_matrix, wts)
+    return np.linalg.norm(exp_probs-obs_probs) + l1_mult*sum(wts) + l2_mult*sum([w**2 for w in wts])
+
+con_weights, nfeval, return_code = scipy.optimize.fmin_l_bfgs_b( 
+        objective, scipy.rand(len(A[0])), 
+        args=(A,obs,0.1,0.1),
+        bounds=posReals,
+        approx_grad=True)
+
+print('Weights:')
+for o,w in zip(lex.gbr_features,con_weights):
+    print(o)
+    print(w)
 
 

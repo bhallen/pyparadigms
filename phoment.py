@@ -148,13 +148,13 @@ def neg_log_probability(weights, tableau, l1_mult=0.0, l2_mult=1.0):
 
 ### OPTIMIZATION FUNCTION
 
-def learn_weights(mt, l1_mult = 0.0, l2_mult = 1.0, precision = 10000000):
+def learn_weights(mt, l1_mult = 0.1, l2_mult = 0.1, precision = 10000000):
     """ Given a filled-in megatableau, return the optimal weight vector.
     """
     # Set up the initial weights and weight bounds (nonpositive reals)
     w_0 = -scipy.rand(len(mt.weights)) # Random initial weights
     #w_0 = [0 for w in mt.weights]       # 0 initial weights
-    nonpos_reals = [(-50,0) for wt in mt.weights]
+    nonpos_reals = [(-20,20) for wt in mt.weights]
 
     # Find the best weights
     learned_weights, fneval, rc = scipy.optimize.fmin_l_bfgs_b(nlpwg, w_0, \
