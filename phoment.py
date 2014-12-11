@@ -62,7 +62,7 @@ class MegaTableau(object):
                 these_violations = len(self.constraints[c].findall(af['base']))
                 if these_violations > 0:
                     violations[c] = these_violations
-            outputs[af['base']] = [af['probability'], violations, 0]
+            outputs[af['lexeme']] = [af['probability'], violations, 0, af['base']]
         self.tableau = {'': outputs}
 
 ### HELPER FUNCTIONS FOR CALCULATING PROBABILITY ###

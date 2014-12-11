@@ -289,13 +289,13 @@ def reduce_hypotheses(hypotheses, all_bd_pairs):
 def add_zero_probability_forms(hypotheses):
     """Add every form from every hypothesis A to every other hypothesis B with a probability of 0 if the form is not already in hypothesis B.
     """
-    all_bases = [af['base'] for hypothesis in hypotheses for af in hypothesis.associated_forms]
+    all_lexemes_and_bases = [(af['lexeme'], af['base']) for hypothesis in hypotheses for af in hypothesis.associated_forms]
 
     for hypothesis in hypotheses:
-        these_bases = [af['base'] for af in hypothesis.associated_forms]
-        for base in all_bases:
-            if base not in these_bases:
-                hypothesis.associated_forms.append({'base':base, 'derivative':apply_hypothesis(base,hypothesis), 'probability': 0.0})
+        these_lexemes = [af['lexeme'] for af in hypothesis.associated_forms]
+        for lexeme, base in all_lexemes_and_bases:
+            if lexeme not in these_lexemes:
+                hypothesis.associated_forms.append({'base':base, 'derivative':apply_hypothesis(base,hypothesis), 'probability': 0.0, 'lexeme': lexeme})
 
     return hypotheses
 
@@ -310,26 +310,24 @@ def add_grammar(sublexicon, constraints):
 
 def create_mapping_tableau(sublexicons, megatableaux):
     new_tableau = {}
-    for s in zip(sublexicons, megatableaux):
-        for af in s[0].associated_forms:
-            if af['base'] in new_tableau:
-                if af['derivative'] in new_tableau[af['base']]:
-                    new_tableau[af['base']][af['derivative']] += s[1].tableau[''][af['base']][2]# Is it right to be adding this?
+    for s,m in zip(sublexicons, megatableaux):
+        for af in s.associated_forms:
+            if af['lexeme'] in new_tableau:
+                if af['derivative'] in new_tableau[af['lexeme']]:
+                    new_tableau[af['lexeme']][af['derivative']] += m.tableau[''][af['lexeme']][2]
                 else:
                     if af['derivative'] != 'incompatible':
-                        new_tableau[af['base']][af['derivative']] = s[1].tableau[''][af['base']][2]
+                        new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
             else:
-                new_tableau[af['base']] = {}
+                new_tableau[af['lexeme']] = {}
                 if af['derivative'] != 'incompatible':
-                    new_tableau[af['base']][af['derivative']] = s[1].tableau[''][af['base']][2]
+                    new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
 
-    for base in new_tableau:
+    for lexeme in new_tableau:
         total = 0
-        for derivative in new_tableau[base]:
-            total += new_tableau[base][derivative]
-        for derivative in new_tableau[base]:
-            new_tableau[base][derivative] /= total
-    print(new_tableau)
-    raise Exception
+        for derivative in new_tableau[lexeme]:
+            total += new_tableau[lexeme][derivative]
+        for derivative in new_tableau[lexeme]:
+            new_tableau[lexeme][derivative] /= total
 
     return new_tableau

@@ -33,10 +33,10 @@ for bf,df in lex.gbr_features:
 
 
 ## Create tableaux corresponding to each cell-to-cell mapping and organize them
-full_data = {deriv:{} for deriv in lex.cells}
+full_data = {deriv_cell:{} for deriv_cell in lex.cells}
 for one_mapping in sll_inputs:
-    print()
-    print(one_mapping)
+    # print()
+    # print(one_mapping)
     all_alignments = []
     for triple in sll_inputs[one_mapping]:
         lexeme = triple[0]
@@ -68,57 +68,55 @@ for one_mapping in sll_inputs:
     sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])
 
     mapping_tableau = hypothesize.create_mapping_tableau(sublexicons, megatableaux)
-    print(mapping_tableau)
-    raise Exception()
-
-    ### TODO: fix create_mapping_tableau so that it indexes by lexeme, not by base. Then fix the structure of full_data below
-
 
     for lexeme in mapping_tableau:
         for candidate in mapping_tableau[lexeme]:
-            if candidate in full_data[(lexeme,one_mapping[1])]:
-                full_data[(lexeme,one_mapping[1])][candidate][one_mapping[0]] = mapping_tableau[lexeme][candidate]
-            else:
-                full_data[(lexeme,one_mapping[1])][candidate] = {one_mapping[0]: mapping_tableau[lexeme][candidate]}
-
-
-## Create a
-
-
-## Create a matrix of predicted probabilities to pass to the optimization function; also make a file with the table. Also make a list of observed probabilities (or, for now, just observed/unobserved)
-with open('output.txt','w') as outf:
-    outf.write('meaning\tform\tobserved\t'+'\t'.join(m for m in [str(f) for f in lex.gbr_features])+'\n')
-    A = []
-    obs = []
-    for lmc in full_data:
-        print()
-        print(lmc)
-        for candidate in full_data[lmc]:
-            # get observed probability
-            row = ['{}\t{}'.format(str(lmc),candidate)]
-            obs_or_not = lex.cells[lmc[1]][lmc[0]] == candidate
-            obs.append(float(obs_or_not))
-            row.append(str(float(obs_or_not)))
-            # get predicted probabilities
-            predicted_probs = []
-            for mapping in lex.gbr_features:
-                if mapping[1] == lmc[1] and mapping[0] in full_data[lmc][candidate]:
-                    predicted_probs.append(full_data[lmc][candidate][mapping[0]])
+            if lexeme in full_data[one_mapping[1]]:
+                if candidate in full_data[one_mapping[1]][lexeme]:
+                    full_data[one_mapping[1]][lexeme][candidate][one_mapping[0]] = mapping_tableau[lexeme][candidate]
                 else:
-                    predicted_probs.append(0.0)
-            A.append(predicted_probs)
-            row += [str(fl) for fl in predicted_probs]
-            outf.write('\t'.join(row)+'\n')
+                    full_data[one_mapping[1]][lexeme][candidate] = {one_mapping[0]: mapping_tableau[lexeme][candidate]}
+            else:
+                full_data[one_mapping[1]][lexeme] = {candidate: {one_mapping[0]: mapping_tableau[lexeme][candidate]}}
 
-print(lex.cells)
+
+
+## Create a set of matrices containing predicted probabilities, one for each derivative cell. Also make a list of observed probabilities (or, for now, just observed/unobserved)
+deriv_matrices = []
+obs = []
+for deriv_cell in full_data:
+    this_deriv_matrix = []
+    this_deriv_bases = [b for b in lex.cells if b != deriv_cell]
+    with open('{}.txt'.format(str(deriv_cell)), 'w') as outf:
+        outf.write('lexeme\tform\tobserved\t'+'\t'.join([str(b) for b in this_deriv_bases])+'\n')
+        # print()
+        # print(deriv_cell)
+        for lexeme in full_data[deriv_cell]:
+            for candidate in full_data[deriv_cell][lexeme]:
+                # get observed probability
+                row = ['{}\t{}'.format(str(lexeme), candidate)]
+                obs_or_not = lex.cells[deriv_cell][lexeme] == candidate
+                obs.append(float(obs_or_not))
+                row.append(str(float(obs_or_not)))
+                # get predicted probabilities
+                available_mappings = []
+                predicted_probs = []
+                for base in this_deriv_bases:
+                    predicted_probs.append(full_data[deriv_cell][lexeme][candidate].get(base, 0.0))
+                this_deriv_matrix.append(predicted_probs)
+                row += [str(fl) for fl in predicted_probs]
+                outf.write('\t'.join(row)+'\n')
+
 
 ## Learn weights
-A = np.array(A)
+deriv_matrices = [np.array(m) for m in deriv_matrices]
 posReals = [(0,25) for wt in range(len(A[0]))]
 
-def objective(wts, cond_prob_matrix, obs_probs, l1_mult=0.0, l2_mult=0.0):
-    exp_probs = scipy.dot(cond_prob_matrix, wts)
-    return np.linalg.norm(exp_probs-obs_probs) + l1_mult*sum(wts) + l2_mult*sum([w**2 for w in wts])
+#### NEXT: get the objective function to properly assign weights, add Paul's regularization term
+
+def objective(weights, cond_prob_matrices, obs_probs, l1_mult=0.0, l2_mult=0.0):
+    exp_probs = scipy.dot(cond_prob_matrix, weights)
+    return np.linalg.norm(exp_probs-obs_probs) + l1_mult*sum(weights) + l2_mult*sum([w**2 for w in weights])
 
 con_weights, nfeval, return_code = scipy.optimize.fmin_l_bfgs_b( 
         objective, scipy.rand(len(A[0])), 
