@@ -33,28 +33,26 @@ for bf,df in lex.gbr_features:
 
 
 ## Create tableaux corresponding to each cell-to-cell mapping and organize them
-new_tab = {(lm,cl):{} for lm in lex.lexemes for cl in lex.cells}
+full_data = {deriv:{} for deriv in lex.cells}
 for one_mapping in sll_inputs:
     print()
     print(one_mapping)
     all_alignments = []
-    for pair in sll_inputs[one_mapping]:
+    for triple in sll_inputs[one_mapping]:
+        lexeme = triple[0]
+        probability = 1.0 # add support for reading probabilities in from the inputs (rather than assigning all observed forms 1.0)
         alignments = []
-        for alignment in alr.align(pair[1].split(' '), pair[2].split(' ')):
-            alignments.append(alignment+[1.0]) # add support for reading probabilities in from the inputs (rather than assigning all observed forms 1.0)
+        for alignment, score in alr.align(triple[1].split(' '), triple[2].split(' ')):
+            final_score = score/alr.check_cohesion(alignment)/len(alignment) # should this really divide by the length of the alignment?
+            alignments.append({'alignment':alignment, 'probability': 1.0, 'lexeme': lexeme, 'score': final_score})
+        alignments.sort(key=lambda x: x['score'])
+        alignments.reverse()
 
-        scored_alignments = []
-        for a in alignments:
-            final_score = a[1]/alr.check_cohesion(a[0])/len(a[0]) # should this really divide by the length of the alignment?
-            scored_alignments.append((a[0], final_score, a[2]))
-        scored_alignments.sort(key=lambda x: x[1])
-        scored_alignments.reverse()
-
-        selected_alignments = [(a[0], a[2]) for a in scored_alignments]  # TO-DO: add ability to skim off only best scoring alignments
+        selected_alignments = alignments  # TO-DO: add ability to skim off only best scoring alignments
 
         all_alignments += selected_alignments # TO-DO: add ability to skim off only best scoring alignments
 
-    
+
     reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(all_alignments)
 
     sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
@@ -70,14 +68,21 @@ for one_mapping in sll_inputs:
     sublexicons, megatableaux = zip(*[hypothesize.add_grammar(s, constraints) for s in sublexicons])
 
     mapping_tableau = hypothesize.create_mapping_tableau(sublexicons, megatableaux)
-    for fm in mapping_tableau:
-        lexeme = lex.retrieve_lexeme(fm, one_mapping[0])  # TEMPORARY -- final version must not look up lexeme, but rather maintain it from the beginning, to ward off homophony issues
-        for candidate in mapping_tableau[fm]:
-            if candidate in new_tab[(lexeme,one_mapping[1])]:
-                new_tab[(lexeme,one_mapping[1])][candidate][one_mapping[0]] = mapping_tableau[fm][candidate]
-            else:
-                new_tab[(lexeme,one_mapping[1])][candidate] = {one_mapping[0]: mapping_tableau[fm][candidate]}
+    print(mapping_tableau)
+    raise Exception()
 
+    ### TODO: fix create_mapping_tableau so that it indexes by lexeme, not by base. Then fix the structure of full_data below
+
+
+    for lexeme in mapping_tableau:
+        for candidate in mapping_tableau[lexeme]:
+            if candidate in full_data[(lexeme,one_mapping[1])]:
+                full_data[(lexeme,one_mapping[1])][candidate][one_mapping[0]] = mapping_tableau[lexeme][candidate]
+            else:
+                full_data[(lexeme,one_mapping[1])][candidate] = {one_mapping[0]: mapping_tableau[lexeme][candidate]}
+
+
+## Create a
 
 
 ## Create a matrix of predicted probabilities to pass to the optimization function; also make a file with the table. Also make a list of observed probabilities (or, for now, just observed/unobserved)
@@ -85,10 +90,10 @@ with open('output.txt','w') as outf:
     outf.write('meaning\tform\tobserved\t'+'\t'.join(m for m in [str(f) for f in lex.gbr_features])+'\n')
     A = []
     obs = []
-    for lmc in new_tab:
+    for lmc in full_data:
         print()
         print(lmc)
-        for candidate in new_tab[lmc]:
+        for candidate in full_data[lmc]:
             # get observed probability
             row = ['{}\t{}'.format(str(lmc),candidate)]
             obs_or_not = lex.cells[lmc[1]][lmc[0]] == candidate
@@ -97,8 +102,8 @@ with open('output.txt','w') as outf:
             # get predicted probabilities
             predicted_probs = []
             for mapping in lex.gbr_features:
-                if mapping[1] == lmc[1] and mapping[0] in new_tab[lmc][candidate]:
-                    predicted_probs.append(new_tab[lmc][candidate][mapping[0]])
+                if mapping[1] == lmc[1] and mapping[0] in full_data[lmc][candidate]:
+                    predicted_probs.append(full_data[lmc][candidate][mapping[0]])
                 else:
                     predicted_probs.append(0.0)
             A.append(predicted_probs)

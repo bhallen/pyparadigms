@@ -53,14 +53,14 @@ def create_and_reduce_hypotheses(alignments):
     unfiltered_hypotheses = []
     all_bd_pairs = []
     for alignment in alignments:
-        base = linearize_word([column['elem1'] for column in alignment[0]])
-        derivative = linearize_word([column['elem2'] for column in alignment[0]])
-        basic_changes = find_basic_changes(alignment[0])
+        base = linearize_word([column['elem1'] for column in alignment['alignment']])
+        derivative = linearize_word([column['elem2'] for column in alignment['alignment']])
+        basic_changes = find_basic_changes(alignment['alignment'])
         grouped_changes = group_changes(basic_changes)
         possibilities_for_all_changes = [create_change_possibilities(c, base) for c in grouped_changes]
         product = list(itertools.product(*possibilities_for_all_changes))
         for cp in product:
-            unfiltered_hypotheses.append(Sublexicon(cp, [{'base':base, 'derivative':derivative, 'probability':alignment[1]}]))
+            unfiltered_hypotheses.append(Sublexicon(cp, [{'base':base, 'derivative':derivative, 'probability':alignment['probability'], 'lexeme':alignment['lexeme']}]))
         all_bd_pairs.append((base,derivative))
     
     combined_hypotheses = combine_identical_hypotheses(unfiltered_hypotheses)
@@ -329,5 +329,7 @@ def create_mapping_tableau(sublexicons, megatableaux):
             total += new_tableau[base][derivative]
         for derivative in new_tableau[base]:
             new_tableau[base][derivative] /= total
+    print(new_tableau)
+    raise Exception
 
     return new_tableau
