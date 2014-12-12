@@ -82,10 +82,10 @@ for one_mapping in sll_inputs:
 
 
 ## Create a set of matrices containing predicted probabilities, one for each derivative cell. Also make a list of observed probabilities (or, for now, just observed/unobserved)
-deriv_matrices = []
-obs = []
+deriv_data = {}
 for deriv_cell in full_data:
     this_deriv_matrix = []
+    this_deriv_obs = []
     this_deriv_bases = [b for b in lex.cells if b != deriv_cell]
     with open('{}.txt'.format(str(deriv_cell)), 'w') as outf:
         outf.write('lexeme\tform\tobserved\t'+'\t'.join([str(b) for b in this_deriv_bases])+'\n')
@@ -96,7 +96,7 @@ for deriv_cell in full_data:
                 # get observed probability
                 row = ['{}\t{}'.format(str(lexeme), candidate)]
                 obs_or_not = lex.cells[deriv_cell][lexeme] == candidate
-                obs.append(float(obs_or_not))
+                this_deriv_obs.append(float(obs_or_not))
                 row.append(str(float(obs_or_not)))
                 # get predicted probabilities
                 available_mappings = []
@@ -106,27 +106,38 @@ for deriv_cell in full_data:
                 this_deriv_matrix.append(predicted_probs)
                 row += [str(fl) for fl in predicted_probs]
                 outf.write('\t'.join(row)+'\n')
+    deriv_data[deriv_cell] = {'observed': np.array(this_deriv_obs), 'predicted': np.array(this_deriv_matrix), 'bases': this_deriv_bases}
 
 
 ## Learn weights
-deriv_matrices = [np.array(m) for m in deriv_matrices]
-posReals = [(0,25) for wt in range(len(A[0]))]
+posReals = [(0,25) for wt in range(len(lex.gbr_features))]
 
 #### NEXT: get the objective function to properly assign weights, add Paul's regularization term
 
-def objective(weights, cond_prob_matrices, obs_probs, l1_mult=0.0, l2_mult=0.0):
-    exp_probs = scipy.dot(cond_prob_matrix, weights)
-    return np.linalg.norm(exp_probs-obs_probs) + l1_mult*sum(weights) + l2_mult*sum([w**2 for w in weights])
+def objective(weights, weight_labels, deriv_data, l1_mult=0.0, l2_mult=0.0):
+    norms_by_deriv = []
+    labeled_weights = list(zip(weights, weight_labels))
+    for d in deriv_data:
+        for w, label in labeled_weights[:]:
+            these_weights = [w for w, label in labeled_weights if label[1] == d and label[0] in deriv_data[d]['bases']]
+        exp_probs = scipy.dot(deriv_data[d]['predicted'], these_weights)
+        norms_by_deriv.append(np.linalg.norm(exp_probs-deriv_data[d]['observed']))
+    return sum(norms_by_deriv) + l1_mult*sum(weights) + l2_mult*sum([w**2 for w in weights])
 
-con_weights, nfeval, return_code = scipy.optimize.fmin_l_bfgs_b( 
-        objective, scipy.rand(len(A[0])), 
-        args=(A,obs,0.1,0.1),
+
+output_weights, nfeval, return_code = scipy.optimize.fmin_l_bfgs_b( 
+        objective, scipy.rand(len(lex.gbr_features)), 
+        args=(lex.gbr_features, deriv_data, 0.1, 0.1),
         bounds=posReals,
         approx_grad=True)
 
-print('Weights:')
-for o,w in zip(lex.gbr_features,con_weights):
-    print(o)
-    print(w)
+
+print('\n\nWeights:')
+labeled_weights = list(zip(output_weights, lex.gbr_features))
+for d in deriv_data:
+    print('\nDerivative cell: {}'.format(str(d)))
+    for w, label in labeled_weights[:]:
+        if label[1] == d and label[0] in deriv_data[d]['bases']:
+            print('{}: {}'.format(str(label[0]), str(w)))
 
 
