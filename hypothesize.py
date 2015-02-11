@@ -49,9 +49,9 @@ class Sublexicon(object):
 
 
 
-def create_and_reduce_hypotheses(alignments):
+def create_and_reduce_hypotheses(alignments, pre_reduction_cutoff):
     unfiltered_hypotheses = []
-    all_bd_pairs = []
+    all_pairs = []
     for alignment in alignments:
         base = linearize_word([column['elem1'] for column in alignment['alignment']])
         derivative = linearize_word([column['elem2'] for column in alignment['alignment']])
@@ -61,13 +61,18 @@ def create_and_reduce_hypotheses(alignments):
         product = list(itertools.product(*possibilities_for_all_changes))
         for cp in product:
             unfiltered_hypotheses.append(Sublexicon(cp, [{'base':base, 'derivative':derivative, 'probability':alignment['probability'], 'lexeme':alignment['lexeme']}]))
-        all_bd_pairs.append((base,derivative))
+        all_pairs.append({'base':base, 'derivative':derivative, 'probability':alignment['probability'], 'lexeme':alignment['lexeme']})
     
     combined_hypotheses = combine_identical_hypotheses(unfiltered_hypotheses)
     combined_hypotheses.sort(key=lambda h: len(h.associated_forms))
     combined_hypotheses.reverse()
 
-    reduced_hypotheses = reduce_hypotheses(combined_hypotheses, all_bd_pairs)
+    if pre_reduction_cutoff:
+        combined_hypotheses = [h for h in combined_hypotheses if len(h.associated_forms) >= pre_reduction_cutoff]
+
+    print('Hypotheses ready for reduction. Pre-reduction hypothesis count: {}'.format(str(len(combined_hypotheses))))
+
+    reduced_hypotheses = reduce_hypotheses(combined_hypotheses, all_pairs)
 
     return reduced_hypotheses
 
@@ -235,15 +240,15 @@ def linearize_word(word):
     return ' '.join(flat_noneless)
 
 
-def account_for_all(hypotheses, all_bd_pairs):
-    for base, derivative in all_bd_pairs:
-        accounted_for_by_each = [apply_hypothesis(base, h) == derivative for h in hypotheses]
+def account_for_all(hypotheses, all_pairs):
+    for pair in all_pairs:
+        accounted_for_by_each = [apply_hypothesis(pair['base'], h) == pair['derivative'] for h in hypotheses]
         if True not in accounted_for_by_each:
             return False
     return True
 
 
-def reduce_hypotheses(hypotheses, all_bd_pairs):
+def reduce_hypotheses(hypotheses, all_pairs):
     """Condenses the list of hypotheses about the entire dataset into the
     minimum number required to account for all base-derivative pairs.
     """
@@ -271,12 +276,12 @@ def reduce_hypotheses(hypotheses, all_bd_pairs):
     # Second step: check for smallest number of adequate hypotheses
     combinations = itertools.chain.from_iterable([itertools.combinations(hypotheses, n) for n in range(1,len(hypotheses))])
     for combo in combinations:
-        if account_for_all(combo, all_bd_pairs):
+        if account_for_all(combo, all_pairs):
             # winner found! Add missing contexts to their respective winners
-            for bd_pair in all_bd_pairs:
+            for pair in all_pairs:
                 for hypothesis in combo:
-                    if apply_hypothesis(bd_pair[0], hypothesis) == bd_pair[1]:
-                        form = {'base':bd_pair[0], 'derivative':bd_pair[1]}
+                    if apply_hypothesis(pair['base'], hypothesis) == pair['derivative']:
+                        form = pair
                         if form not in hypothesis.associated_forms:
                             hypothesis.associated_forms.append(form) # does combo actually get modified here? Double-check! 
                             break
@@ -304,6 +309,13 @@ def add_grammar(sublexicon, constraints):
     mt = phoment.MegaTableau(sublexicon, constraints)
     sublexicon.weights = phoment.learn_weights(mt)
     sublexicon.constraint_names = constraints
+    
+    z = sorted(zip(sublexicon.weights, sublexicon.constraint_names), key=lambda x: x[0], reverse=True)
+    print()
+    print(sublexicon)
+    for w,n in z[:5]:
+        print('{}\t{}'.format(str(n),str(w)))
+    
 
     return (sublexicon, mt)
 
