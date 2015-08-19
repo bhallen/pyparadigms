@@ -2,11 +2,13 @@
 # -*- coding: utf-8 -*-
 
 
-## Based on learner.js (by Michael Becker and Blake Allen)
+## Based on learner.js (by Blake Allen and Michael Becker)
 
 import itertools
 import collections
 from collections import defaultdict
+
+import pdb
 
 import phoment
 
@@ -36,6 +38,8 @@ class Sublexicon(object):
         self.associated_forms = associated_forms
         self.constraint_names = None
         self.weights = None
+        self.megatableau = None
+        self.relative_size = 0.0
 
     def __repr__(self):
         # needs aesthetic improvement
@@ -49,7 +53,7 @@ class Sublexicon(object):
 
 
 
-def create_and_reduce_hypotheses(alignments, pre_reduction_cutoff):
+def create_and_reduce_hypotheses(alignments, pre_reduction_cutoff, orientation='product'):
     unfiltered_hypotheses = []
     all_pairs = []
     for alignment in alignments:
@@ -72,7 +76,12 @@ def create_and_reduce_hypotheses(alignments, pre_reduction_cutoff):
 
     print('Hypotheses ready for reduction. Pre-reduction hypothesis count: {}'.format(str(len(combined_hypotheses))))
 
-    reduced_hypotheses = reduce_hypotheses(combined_hypotheses, all_pairs)
+    reduced_hypotheses = reduce_hypotheses(combined_hypotheses, all_pairs, orientation)
+
+    sublexicon_sizes = [sum([af['probability'] for af in h.associated_forms]) for h in reduced_hypotheses]
+    size_total = sum(sublexicon_sizes)
+    for h, size in zip(reduced_hypotheses, sublexicon_sizes):
+        h.relative_size = size / size_total
 
     return reduced_hypotheses
 
@@ -178,7 +187,7 @@ def add_nones(word):
             return list(yield_it(word))
 
 
-def apply_hypothesis(word, hypothesis):
+def apply_hypothesis(word, hypothesis, orientation='product'):
     """Apply the changes in a hypothesis to a (base) word. Base word can be either
     a list of segments (no Nones) or a space-spaced string.
     """
@@ -198,9 +207,13 @@ def apply_hypothesis(word, hypothesis):
             changed_derivative[change_position] = change.output_material
         if change.change_type == 'delete':
             for i, s in enumerate(change.input_material):
+                if orientation == 'source' and current_base[change_position+(i*2)] != s:
+                    raise Exception('Deletion incompatible with base: no {} to delete.'.format(s))
                 changed_derivative[change_position+(i*2)] = None
         if change.change_type == 'mutate':
             for i, s in enumerate(change.output_material):
+                if orientation == 'source' and current_base[change_position+(i*2)] != change.input_material[i]:
+                    raise Exception('Mutation incompatible with base: no {} to mutate.'.format(s))
                 changed_derivative[change_position+(i*2)] = s
 
         return (changed_base, changed_derivative)
@@ -209,8 +222,10 @@ def apply_hypothesis(word, hypothesis):
     current_derivative = list(add_nones(word))
 
     try:
-        for c in hypothesis.changes:
-            current_base, current_derivative = apply_change(current_base, current_derivative, c)
+        for change in hypothesis.changes:
+            # if word == 'n e p e n' and change.change_type=='mutate' and change.input_material==['b']:
+            #     pdb.set_trace()
+            current_base, current_derivative = apply_change(current_base, current_derivative, change)
     except:
         return 'incompatible'
 
@@ -248,7 +263,7 @@ def account_for_all(hypotheses, all_pairs):
     return True
 
 
-def reduce_hypotheses(hypotheses, all_pairs):
+def reduce_hypotheses(hypotheses, all_pairs, orientation='product'):
     """Condenses the list of hypotheses about the entire dataset into the
     minimum number required to account for all base-derivative pairs.
     """
@@ -261,7 +276,7 @@ def reduce_hypotheses(hypotheses, all_pairs):
                 for associated_form in small.associated_forms:
                     small_base = associated_form['base']
                     small_derivative = associated_form['derivative']
-                    large_predicted_derivative = apply_hypothesis(small_base, large)
+                    large_predicted_derivative = apply_hypothesis(small_base, large, orientation)
                     consumabilities.append(small_derivative == large_predicted_derivative)
                 if False not in consumabilities: # if there are no forms in small that large cannot account for
                     for bd in small.associated_forms:
@@ -280,7 +295,7 @@ def reduce_hypotheses(hypotheses, all_pairs):
             # winner found! Add missing contexts to their respective winners
             for pair in all_pairs:
                 for hypothesis in combo:
-                    if apply_hypothesis(pair['base'], hypothesis) == pair['derivative']:
+                    if apply_hypothesis(pair['base'], hypothesis, orientation) == pair['derivative']:
                         form = pair
                         if form not in hypothesis.associated_forms:
                             hypothesis.associated_forms.append(form) # does combo actually get modified here? Double-check! 
@@ -305,41 +320,51 @@ def add_zero_probability_forms(hypotheses):
     return hypotheses
 
 
-def add_grammar(sublexicon, constraints):
+def add_grammar(sublexicon, constraints, l1_mult = 0.0, l2_mult = 0.001):
     mt = phoment.MegaTableau(sublexicon, constraints)
-    sublexicon.weights = phoment.learn_weights(mt)
+    sublexicon.weights = phoment.learn_weights(mt, l1_mult, l2_mult)
     sublexicon.constraint_names = constraints
+    sublexicon.megatableau = mt
     
-    z = sorted(zip(sublexicon.weights, sublexicon.constraint_names), key=lambda x: x[0], reverse=True)
+    z = sorted(zip(sublexicon.weights, sublexicon.constraint_names), key=lambda x: abs(x[0]), reverse=True)
     print()
     print(sublexicon)
-    for w,n in z[:5]:
+    print(str([(af['base'], af['derivative']) for af in sublexicon.associated_forms if af['probability'] > 0.0][:8]) + '...')
+    for w,n in z[:8]:
         print('{}\t{}'.format(str(n),str(w)))
-    
 
-    return (sublexicon, mt)
+    return sublexicon
 
 
-def create_mapping_tableau(sublexicons, megatableaux):
-    new_tableau = {}
-    for s,m in zip(sublexicons, megatableaux):
-        for af in s.associated_forms:
-            if af['lexeme'] in new_tableau:
-                if af['derivative'] in new_tableau[af['lexeme']]:
-                    new_tableau[af['lexeme']][af['derivative']] += m.tableau[''][af['lexeme']][2]
-                else:
-                    if af['derivative'] != 'incompatible':
-                        new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
-            else:
-                new_tableau[af['lexeme']] = {}
-                if af['derivative'] != 'incompatible':
-                    new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
+def predict_from_one_base_form(base_form, sublexicon):
+    candidate = apply_hypothesis(base_form, sublexicon)
+    # print(candidate)
+    probability = phoment.new_form_probability(base_form, sublexicon.megatableau)
 
-    for lexeme in new_tableau:
-        total = 0
-        for derivative in new_tableau[lexeme]:
-            total += new_tableau[lexeme][derivative]
-        for derivative in new_tableau[lexeme]:
-            new_tableau[lexeme][derivative] /= total
+    return (candidate, probability)
 
-    return new_tableau
+
+# def create_mapping_tableau(sublexicons, megatableaux):
+#     new_tableau = {}
+#     for s,m in zip(sublexicons, megatableaux):
+#         for af in s.associated_forms:
+#             if af['lexeme'] in new_tableau:
+#                 if af['derivative'] in new_tableau[af['lexeme']]:
+#                     new_tableau[af['lexeme']][af['derivative']] += m.tableau[''][af['lexeme']][2]
+#                 else:
+#                     if af['derivative'] != 'incompatible':
+#                         new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
+#             else:
+#                 new_tableau[af['lexeme']] = {}
+#                 if af['derivative'] != 'incompatible':
+#                     new_tableau[af['lexeme']][af['derivative']] = m.tableau[''][af['lexeme']][2]
+
+#     for lexeme in new_tableau:
+#         total = 0
+#         ordered_derivatives = sorted([d for d in new_tableau[lexeme]])
+#         for derivative in ordered_derivatives:
+#             total += new_tableau[lexeme][derivative]
+#         for derivative in new_tableau[lexeme]:
+#             new_tableau[lexeme][derivative] /= total
+
+#     return new_tableau

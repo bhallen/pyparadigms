@@ -65,6 +65,8 @@ class MegaTableau(object):
             outputs[af['lexeme']] = [af['probability'], violations, 0, af['base']]
         self.tableau = {'': outputs}
 
+
+
 ### HELPER FUNCTIONS FOR CALCULATING PROBABILITY ###
 
 def maxent_value(weights, tableau, ur, sr):
@@ -92,10 +94,23 @@ def update_maxent_values(weights, tableau):
         for sr in tableau[ur]:
             tableau[ur][sr][2] = maxent_value(weights, tableau, ur, sr)
 
+def new_form_probability(form, megatableau):
+    viols = [len(constraint.findall(form)) for constraint in megatableau.constraints]
+    eharmony = math.e ** np.dot(viols, megatableau.weights)
+    z = z_score(megatableau.tableau, '') + eharmony # UR is ''
+
+    # if form == 'n a p':
+    #     print(form)
+    #     print([(c, w) for c, w, v in zip(megatableau.constraints, megatableau.weights, viols)  if v > 0])
+    #     print(eharmony)
+    #     print(eharmony / z)
+
+    return eharmony / z
+
 
 ### OBJECTIVE FUNCTION(S) ###
 
-def neg_log_probability_with_gradient(weights, tableau, l1_mult=0.0, l2_mult=1.0, gaussian_priors=None):
+def neg_log_probability_with_gradient(weights, tableau, l1_mult=0.0, l2_mult=0.001, gaussian_priors=None):
     """ Returns the negative log probability of the data AND a gradient vector.
     This is the objective function used in learn_weights().
     """
@@ -148,7 +163,7 @@ def neg_log_probability(weights, tableau, l1_mult=0.0, l2_mult=1.0):
 
 ### OPTIMIZATION FUNCTION
 
-def learn_weights(mt, l1_mult = 0.0, l2_mult = 0.1, precision = 10000000):
+def learn_weights(mt, l1_mult = 0.0, l2_mult = 0.001, precision = 10000000):
     """ Given a filled-in megatableau, return the optimal weight vector.
     """
     # Set up the initial weights and weight bounds (nonpositive reals)
