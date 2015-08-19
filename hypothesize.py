@@ -34,7 +34,7 @@ class Sublexicon(object):
     """
 
     def __init__(self, changes, associated_forms):
-        self.changes = changes
+        self.changes = tuple(sorted(changes, key=lambda c:str(c)))
         self.associated_forms = associated_forms
         self.constraint_names = None
         self.weights = None

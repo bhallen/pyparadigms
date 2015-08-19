@@ -43,6 +43,7 @@ class Lexicon:
         self.mappings = defaultdict(dict) # morphological operations from b to d
         self.grammars = {c: None for c in self.cells}
         self.aligner = None
+        self.psublexicons = []
 
     def read_training_file(self, training_filename):
         """See documentation for detailed formatting requirements.
@@ -74,7 +75,7 @@ class Lexicon:
     def learn(self, training_filename, constraints_filename, features_filename):
         print('Initializing aligner...')
         self.aligner = aligner.Aligner(feature_file=features_filename, 
-                                   sub_penalty=4.0, tolerance=1.0)              # TO-DO: Remove these magic numbers
+                                   sub_penalty=4.0, tolerance=1.0)              #TO-DO: Remove these magic numbers
 
         print('Loading training file...')
         self.read_training_file(training_filename)
@@ -88,10 +89,14 @@ class Lexicon:
                   .format(deriv_cell))
             for base_cell in self.cells:
                 if base_cell != deriv_cell:
-                    print('Learning mappings from {} to {}...'
+                    print('Learning base sublexicons from {} to {}...'
                            .format(base_cell, deriv_cell))
                     self.mappings[deriv_cell][base_cell] = \
                            self.find_bd_sublexicons(base_cell, deriv_cell)
+            print('Finding this derivative cell\'s paradigm sublexicons...')
+            self.psublexicons = self.find_psublexicons(
+                                                      self.mappings[deriv_cell],
+                                                      deriv_cell)
 
 
 
@@ -131,14 +136,51 @@ class Lexicon:
         print('Number of alignments: {}'.format(str(len(all_alignments))))
 
         print('Reducing hypotheses...')
-        reduced_hypotheses = hypothesize.create_and_reduce_hypotheses(
+        bsublexicons = hypothesize.create_and_reduce_hypotheses(
                      all_alignments, PRE_REDUCTION_CUTOFF, orientation='source')
         print('Hypotheses have been reduced.')
 
-        print('Adding zero frequency forms...')
-        sublexicons = hypothesize.add_zero_probability_forms(reduced_hypotheses)
-        print('Zero frequency forms added.')
-        print('Number of b-d sublexicons: {}'.format(str(len(sublexicons))))
+        ## Should NOT add zero frequency forms since associated words are used
+        ## to determine paradigm sublexicons
+        print('Number of base sublexicons: {}'.format(str(len(bsublexicons))))
+
+        return bsublexicons
+
+
+    def find_psublexicons(self, bsublex_dict, deriv_cell):
+        """This function first organizes lexemes by their conjunctions of
+        base sublexicon operations, and then creates a PSublexicon for each
+        unique combination of base sublexicon operation conjunctions.
+        """
+
+        lexeme_dict = defaultdict(list) # {lexeme: (base_cell, [Changes])}
+        for base_cell in bsublex_dict:
+            for bsublex in bsublex_dict[base_cell]:
+                for af in bsublex.associated_forms:
+                    lexeme_dict[af['lexeme']].append(
+                      ((base_cell, bsublex.changes), 
+                       Word(af['base'],
+                            af['lexeme'],
+                            base_cell,
+                            af['probability'])))
+
+        psublexicons = defaultdict(dict)#{(base_cell,changes): {lexeme:[Words]}}
+        for lexeme in lexeme_dict:
+            basechanges = [c for c,w in lexeme_dict[lexeme]]
+            basechanges = tuple(sorted(basechanges, key=lambda c:c[0]))
+            psublexicons[basechanges][lexeme] = [w for w in lexeme_dict[lexeme]]
+
+        print('Number of paradigm sublexicons: {}'.format(len(psublexicons)))
+        output_psublexicons = []
+        for ps in psublexicons:
+            output_psublexicons.append(PSublexicon(
+                                    deriv_cell=deriv_cell,
+                                    operations=ps,
+                                    lexemes=[lex for lex in psublexicons[ps]],
+                                    words=[psublexicons[ps][lex] for lex in psublexicons[ps]]))
+
+
+        print(output_psublexicons)
 
 
     def select_subset(self, sf_val_tuples):
@@ -169,8 +211,6 @@ class Lexicon:
 
 
 class Word:
-    """A dict for holding the s-feature specifications of a word
-    """
     def __init__(self, form=None, lexeme=None, sfeatures={}, frequency=1.0):
         ## self.form is a space-spaced str
         self.form = form
@@ -179,16 +219,39 @@ class Word:
         self.frequency = frequency
 
     def __repr__(self):
+        if type(self.sfeatures) == dict:
+            sfeatures_repr = '\t'.join([key+': ' + self.sfeatures[key] for key 
+                  in self.sfeatures])
+        elif type(self.sfeatures) == tuple:
+            sfeatures_repr = str(self.sfeatures)
         return ('[{}] ({})\n'.format(self.form, self.frequency)
                 + 'lexeme: {}\n'.format(self.lexeme)
-                + '\t'.join([key+': ' + self.sfeatures[key] for key 
-                  in self.sfeatures]) + '\n')
+                + sfeatures_repr + '\n')
 
     def __str__(self):
         return repr(self)
 
     def check_values(self, sf_val_tuples):
         return all([self.sfeatures[sf]==val for sf,val in sf_val_tuples])
+
+
+class PSublexicon:
+    """Paradigm sublexicon: a sublexicon for a particular derivative cell
+    across all base cells
+    """
+    def __init__(self, deriv_cell=None, operations=[], 
+                 lexemes=[], words=[]):
+        self.deriv_cell = deriv_cell
+        self.operations = operations # Formerly: {base_cell: [Change, Change...]}
+        self.lexemes = lexemes # Formerly: {lexeme: {base_cell: Word}}
+        self.words = words
+
+    def __repr__(self):
+        # return str(self.operations)
+        return str(self.lexemes)
+
+    def __str__(self):
+        return repr(self)
 
 
 def test_predictions(testing_dict, gbr_features, con_weights):
