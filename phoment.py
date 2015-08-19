@@ -34,10 +34,10 @@ class MegaTableau(object):
         self.read_weights_file(megt_file) - populates self.weights
     """
     
-    def __init__(self, sublexicon=None, constraints=None):
+    def __init__(self, psublexicon=None, constraints=None):
         """
-        sublexicon -- a sublexicon (originally a hypothesis) from hypothesize.py
-        constraints -- a list of strings corresponding to the phonological constraints to be weighted
+        sublexicon -- a psublexicon from paradigms.py
+        constraints -- a list of tuples (base_cell, str) corresponding to the phonological constraints to be weighted
         """
         self.constraint_names = constraints
         self.gaussian_priors = {}

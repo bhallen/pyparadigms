@@ -28,13 +28,14 @@ For each unknown cell d of the target lexeme:
 
 import aligner
 import hypothesize
+import phoment
 
 from collections import defaultdict
 
 PRE_REDUCTION_CUTOFF = None
 
 
-class Lexicon:
+class Lexicon:                                                                  #TO-DO: consider renaming InflectionalSystem?
     def __init__(self):
         self.sfeatures = []
         self.wordlist = []
@@ -43,7 +44,7 @@ class Lexicon:
         self.mappings = defaultdict(dict) # morphological operations from b to d
         self.grammars = {c: None for c in self.cells}
         self.aligner = None
-        self.psublexicons = []
+        self.psublexicons = {} # {deriv_cell: [PSublexicons]}
 
     def read_training_file(self, training_filename):
         """See documentation for detailed formatting requirements.
@@ -94,9 +95,14 @@ class Lexicon:
                     self.mappings[deriv_cell][base_cell] = \
                            self.find_bd_sublexicons(base_cell, deriv_cell)
             print('Finding this derivative cell\'s paradigm sublexicons...')
-            self.psublexicons = self.find_psublexicons(
+            this_deriv_psublexicons = self.find_psublexicons(
                                                       self.mappings[deriv_cell],
                                                       deriv_cell)
+            print('Learning a MaxEnt HG for each paradigm sublexicon...')
+            for ps in this_deriv_psublexicons:
+                ps.learn_grammar()
+
+            self.psublexicons[deriv_cell] = this_deriv_psublexicons
 
 
 
@@ -171,16 +177,23 @@ class Lexicon:
             psublexicons[basechanges][lexeme] = [w for w in lexeme_dict[lexeme]]
 
         print('Number of paradigm sublexicons: {}'.format(len(psublexicons)))
-        output_psublexicons = []
+        classy_psublexicons = []
         for ps in psublexicons:
-            output_psublexicons.append(PSublexicon(
-                                    deriv_cell=deriv_cell,
-                                    operations=ps,
-                                    lexemes=[lex for lex in psublexicons[ps]],
-                                    words=[psublexicons[ps][lex] for lex in psublexicons[ps]]))
+            classy_psublexicons.append(PSublexicon(
+                    deriv_cell=deriv_cell,
+                    operations=ps,
+                    lexemes=[lex for lex in psublexicons[ps]],
+                    words=[psublexicons[ps][lex] for lex in psublexicons[ps]]))
 
 
-        print(output_psublexicons)
+        psublexicons = classy_psublexicons
+        for ps in psublexicons:
+            for other_ps in psublexicons:
+                if ps != other_ps:
+                    for word in other_ps.words:
+                        ps.zero_frequency_words.append(word)
+
+        return psublexicons
 
 
     def select_subset(self, sf_val_tuples):
@@ -189,10 +202,6 @@ class Lexicon:
 
     def retrieve_lexeme(self, form, sf_val_tuples):
         with_correct_sfeatures = self.select_subset(sf_val_tuples)
-        # print(with_correct_sfeatures)
-        # print(sf_val_tuples)
-        # print(form)
-        # print([e['lexeme'] for e in with_correct_sfeatures if e['form'] == form])
         return [w.lexeme for w in with_correct_sfeatures if w.form == form][0]
 
     def create_cells(self):
@@ -201,13 +210,6 @@ class Lexicon:
                          in w.sfeatures if feature != 'lexeme'])
             self.cells[fval_tuple][w.lexeme] = w
 
-    def create_gbr_features(self):
-        for base_c in self.cells:
-            # self.gbr_features.append((base_c,))
-            for deriv_c in self.cells:
-                if base_c != deriv_c:
-                    self.gbr_features.append((base_c,deriv_c))
-        self.gbr_features.sort()
 
 
 class Word:
@@ -245,6 +247,8 @@ class PSublexicon:
         self.operations = operations # Formerly: {base_cell: [Change, Change...]}
         self.lexemes = lexemes # Formerly: {lexeme: {base_cell: Word}}
         self.words = words
+        self.zero_frequency_words = []
+        self.grammar = None
 
     def __repr__(self):
         # return str(self.operations)
@@ -252,6 +256,9 @@ class PSublexicon:
 
     def __str__(self):
         return repr(self)
+
+    def learn_grammar(self):
+        mt = phoment.MegaTableau(self, constraints) # make sure constraints have been read in... in new format!
 
 
 def test_predictions(testing_dict, gbr_features, con_weights):
