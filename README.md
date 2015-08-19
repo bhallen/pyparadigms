@@ -1,5 +1,5 @@
 PyParadigms
 ===================
 
-A Python 3 module for learning paradigmatic morphology
+A Python3 module for machine learning of inflectional systems using Sublexical Morphology
 
