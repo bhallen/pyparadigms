@@ -9,61 +9,12 @@ import sys
 from collections import defaultdict
 import math
 import re
+import csv
 import scipy, scipy.optimize
 import numpy as np
 import hypothesize
 
-class MegaTableau(object):
-
-    """
-    A representation of tableaux for manipulation by the maxent learner.
-    Derived from a file of tab-delimited tableaux.
-    Contains the following attributes:
-        self.constraints -------- list of constraint names
-            this is found on the first line of the input file
-        self.weights ------------ a list of weights for constraints
-        self.tableau ------------ a dictionary of dictionaries:
-            {input: {output: [freq, violDic, maxentScore]}}
-            freq = float()
-            violDic = dictionary of constraint violations (integers). 
-                Keys are constraint indices, based on order of constraints in self.constraints
-            maxentScore = e**harmony. Initialized to zero (because harmony is undefined without weights).
-    Contains the following methods:
-        self.read_megt_file(megt_file) - moves the data from the .txt file to the attributes
-            self.weights is not populated.
-        self.read_weights_file(megt_file) - populates self.weights
-    """
-    
-    def __init__(self, psublexicon=None, constraints=None):
-        """
-        sublexicon -- a psublexicon from paradigms.py
-        constraints -- a list of tuples (base_cell, str) corresponding to the phonological constraints to be weighted
-        """
-        self.constraint_names = constraints
-        self.gaussian_priors = {}
-        self.tableau = defaultdict(dict)
-        if sublexicon and constraints:
-            self.constraints = self.create_re_constraints(constraints)
-            self.weights = np.zeros(len(self.constraints))
-            self.populate_tableau(sublexicon)
-
-
-    def create_re_constraints(self, constraints):
-        """To-do: add the ability to translate featural constraints
-        """
-        return [re.compile(c) for c in constraints]
-
-
-    def populate_tableau(self, sublexicon):
-        outputs = {}
-        for af in sublexicon.associated_forms:
-            violations = {}
-            for c in range(len(self.constraints)):
-                these_violations = len(self.constraints[c].findall(af['base']))
-                if these_violations > 0:
-                    violations[c] = these_violations
-            outputs[af['lexeme']] = [af['probability'], violations, 0, af['base']]
-        self.tableau = {'': outputs}
+import pdb
 
 
 
@@ -134,6 +85,7 @@ def neg_log_probability_with_gradient(weights, tableau, l1_mult=0.0, l2_mult=0.0
         grad_prior = -(l1_grad_prior + l2_grad_prior)
 
     for ur in tableau:
+        assert(ur == 'dummy_ur')
         ur_count = 0 # Total observed for this UR
         z = z_score(tableau, ur)
         new_expected = [0 for i in range(len(weights))]
@@ -155,7 +107,7 @@ def neg_log_probability_with_gradient(weights, tableau, l1_mult=0.0, l2_mult=0.0
 
 nlpwg = neg_log_probability_with_gradient # So you don't get carpal tunnel syndrome.
 
-def neg_log_probability(weights, tableau, l1_mult=0.0, l2_mult=1.0):
+def neg_log_probability(weights, tableau, l1_mult=0.0, l2_mult=0.001):
     """ Returns just the negative log probability of the data.
     """
     return (nlpwg(weights, tableau, l1_mult, l2_mult))[0]
@@ -163,20 +115,20 @@ def neg_log_probability(weights, tableau, l1_mult=0.0, l2_mult=1.0):
 
 ### OPTIMIZATION FUNCTION
 
-def learn_weights(mt, l1_mult = 0.0, l2_mult = 0.001, precision = 10000000):
+def learn_weights(weights, tableau, l1_mult = 0.0, l2_mult = 0.001, precision = 1000):
     """ Given a filled-in megatableau, return the optimal weight vector.
     """
     # Set up the initial weights and weight bounds (nonpositive reals)
-    w_0 = -scipy.rand(len(mt.weights)) # Random initial weights
-    #w_0 = [0 for w in mt.weights]       # 0 initial weights
-    bounds = [(-20,20) for wt in mt.weights]
+    # w_0 = -scipy.rand(len(weights)) # Random initial weights
+    w_0 = [0 for w in weights]       # 0 initial weights
+    bounds = [(-20,20) for wt in weights]
 
     # Find the best weights
     learned_weights, fneval, rc = scipy.optimize.fmin_l_bfgs_b(nlpwg, w_0, \
-        args = (mt.tableau,l1_mult,l2_mult, mt.gaussian_priors), bounds=bounds, factr=precision)
+        args = (tableau, l1_mult, l2_mult), bounds=bounds, factr=precision)
 
     # Update the mt in place with the new weights
-    mt.weights = learned_weights
+    weights = learned_weights
 
 
     # # Be sociable

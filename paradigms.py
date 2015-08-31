@@ -30,7 +30,13 @@ import aligner
 import hypothesize
 import phoment
 
+import csv
+import re
+import numpy as np
 from collections import defaultdict
+import itertools
+
+import pdb
 
 PRE_REDUCTION_CUTOFF = None
 
@@ -100,7 +106,8 @@ class Lexicon:                                                                  
                                                       deriv_cell)
             print('Learning a MaxEnt HG for each paradigm sublexicon...')
             for ps in this_deriv_psublexicons:
-                ps.learn_grammar()
+                # pdb.set_trace()
+                ps.learn_grammar(constraints_filename)
 
             self.psublexicons[deriv_cell] = this_deriv_psublexicons
 
@@ -183,7 +190,8 @@ class Lexicon:                                                                  
                     deriv_cell=deriv_cell,
                     operations=ps,
                     lexemes=[lex for lex in psublexicons[ps]],
-                    words=[psublexicons[ps][lex] for lex in psublexicons[ps]]))
+                    words=([word for lex in psublexicons[ps]
+                           for change, word in psublexicons[ps][lex]])))
 
 
         psublexicons = classy_psublexicons
@@ -217,24 +225,25 @@ class Word:
         ## self.form is a space-spaced str
         self.form = form
         self.lexeme = lexeme
-        self.sfeatures = sfeatures
+        self.cell = sfeatures
         self.frequency = frequency
+        self.violations = None
 
     def __repr__(self):
-        if type(self.sfeatures) == dict:
-            sfeatures_repr = '\t'.join([key+': ' + self.sfeatures[key] for key 
-                  in self.sfeatures])
-        elif type(self.sfeatures) == tuple:
-            sfeatures_repr = str(self.sfeatures)
+        if type(self.cell) == dict:
+            cell_repr = '\t'.join([key+': ' + self.cell[key] for key 
+                  in self.cell])
+        elif type(self.cell) == tuple:
+            cell_repr = str(self.cell)
         return ('[{}] ({})\n'.format(self.form, self.frequency)
                 + 'lexeme: {}\n'.format(self.lexeme)
-                + sfeatures_repr + '\n')
+                + cell_repr + '\n')
 
     def __str__(self):
         return repr(self)
 
     def check_values(self, sf_val_tuples):
-        return all([self.sfeatures[sf]==val for sf,val in sf_val_tuples])
+        return all([self.cell[sf]==val for sf,val in sf_val_tuples])
 
 
 class PSublexicon:
@@ -249,6 +258,10 @@ class PSublexicon:
         self.words = words
         self.zero_frequency_words = []
         self.grammar = None
+        self.constraints = None
+        self.violations = None
+        self.tableau = {'dummy_ur': {}}
+        self.weights = None
 
     def __repr__(self):
         # return str(self.operations)
@@ -257,8 +270,89 @@ class PSublexicon:
     def __str__(self):
         return repr(self)
 
-    def learn_grammar(self):
-        mt = phoment.MegaTableau(self, constraints) # make sure constraints have been read in... in new format!
+    def learn_grammar(self, constraints_filename):
+        self.constraints = self.read_constraints_file(constraints_filename)
+        self.gaussian_priors = {}
+        self.weights = np.zeros(len(self.constraints))
+
+        self.add_constraints_to_words()
+        self.make_tableau_from_words()
+        self.weights = phoment.learn_weights(self.weights, self.tableau)
+
+        # self.save_tableau_to_file()                                             # TO-DO add parameters
+
+        # temporary; for printing...
+        labeled_weights = list(zip(self.constraints, self.weights))
+        labeled_weights.sort(key=lambda x: x[1], reverse=True)
+        print()
+        print(self)
+        for c,w in labeled_weights[:4]:
+            print('{}\t{}'.format(c,w))
+        # pdb.set_trace()
+
+    def read_constraints_file(self, cfilename):
+        constraints = [] # [(con_re, cell)...]
+        with open(cfilename) as cfile:
+            cfilereader = csv.reader(cfile, delimiter='\t')
+            for line in cfilereader:
+                if len(line) > 1:
+                    con_str, cell_str = line
+                    con_re = re.compile(con_str)
+                    cell = tuple([tuple([feature.split(':')[0], 
+                                 feature.split(':')[1]]) 
+                                    for feature in cell_str.split(',')])
+                    constraints.append((con_re, cell))
+        return constraints
+
+    def add_constraints_to_words(self):
+        outputs = {}
+        for w in self.words:
+            violations = {}
+            for i, c in enumerate(self.constraints):
+                if w.cell == c[1]:
+                    these_violations = len(c[0].findall(w.form))
+                    if these_violations > 0:
+                        violations[i] = these_violations
+            w.violations = violations
+
+        for w in self.zero_frequency_words:
+            violations = {}
+            for i, c in enumerate(self.constraints):
+                if w.cell == c[1]:
+                    these_violations = len(c[0].findall(w.form))
+                    if these_violations > 0:
+                        violations[i] = these_violations
+            w.violations = violations
+
+    def make_tableau_from_words(self):
+        for w in self.words:
+            entry = w.form
+            entry_info = [w.frequency, w.violations, 0]
+            self.tableau['dummy_ur'][entry] = entry_info
+
+        for w in self.zero_frequency_words:
+            entry = w.form
+            entry_info = [0, w.violations, 0]
+            self.tableau['dummy_ur'][entry] = entry_info
+
+    def save_tableau_to_file(self):
+        with open('tableau_{}.csv'.format(str(self)), 'w') as tabfile:
+            # TO-DO: sort constraints by base cell
+            tabfile.write('\t\t'+'\t'.join([str(c) for c in self.constraints])+'\n')
+            tabfile.write('\t\t'+'\t'.join([str(w) for w in self.weights])+'\n')
+            # TO-DO: also sort forms by base cell
+            for w in self.words:
+                line = '{}\t{}\t'.format(w.form, w.cell)
+                line += '\t'.join([str(w.violations[i]) if i in w.violations 
+                               else '0' for i,c in enumerate(self.constraints)])
+                tabfile.write(line+'\n')
+            tabfile.write('\n\n')
+            for w in self.zero_frequency_words:
+                line = '{}\t{}\t'.format(w.form, w.cell)
+                line += '\t'.join([str(w.violations[i]) if i in w.violations 
+                               else '0' for i,c in enumerate(self.constraints)])
+                tabfile.write(line+'\n')
+
 
 
 def test_predictions(testing_dict, gbr_features, con_weights):
