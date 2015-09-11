@@ -17,7 +17,6 @@ import hypothesize
 import pdb
 
 
-
 ### HELPER FUNCTIONS FOR CALCULATING PROBABILITY ###
 
 def maxent_value(weights, tableau, ur, sr):
@@ -45,16 +44,28 @@ def update_maxent_values(weights, tableau):
         for sr in tableau[ur]:
             tableau[ur][sr][2] = maxent_value(weights, tableau, ur, sr)
 
-def new_form_probability(form, megatableau):
-    viols = [len(constraint.findall(form)) for constraint in megatableau.constraints]
-    eharmony = math.e ** np.dot(viols, megatableau.weights)
-    z = z_score(megatableau.tableau, '') + eharmony # UR is ''
+def find_violations(word, constraints, base_cell=None):
+    violations = {}
+    try:
+        form = word.form
+        cell = word.cell
+    except AttributeError:
+        form = word
+        cell = base_cell
+    for i, c in enumerate(constraints):
+        if cell == c[1]:
+            these_violations = len(c[0].findall(form))
+            if these_violations > 0:
+                violations[i] = these_violations
 
-    # if form == 'n a p':
-    #     print(form)
-    #     print([(c, w) for c, w, v in zip(megatableau.constraints, megatableau.weights, viols)  if v > 0])
-    #     print(eharmony)
-    #     print(eharmony / z)
+    return violations
+
+def new_form_probability(form, psublexicon, base_cell):
+    viols_dict = find_violations(form, psublexicon.constraints, base_cell)
+    viols_array = np.array([viols_dict[i] if i in viols_dict else 0 
+                            for i in range(len(psublexicon.weights))])
+    eharmony = math.e ** np.dot(viols_array, psublexicon.weights)
+    z = z_score(psublexicon.tableau, 'dummy_ur') + eharmony # UR is 'dummy_ur'  #TO-DO: determine whether this calc is appropriate
 
     return eharmony / z
 

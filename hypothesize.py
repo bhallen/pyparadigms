@@ -255,9 +255,9 @@ def linearize_word(word):
     return ' '.join(flat_noneless)
 
 
-def account_for_all(hypotheses, all_pairs):
+def account_for_all(hypotheses, all_pairs, orientation):
     for pair in all_pairs:
-        accounted_for_by_each = [apply_hypothesis(pair['base'], h) == pair['derivative'] for h in hypotheses]
+        accounted_for_by_each = [apply_hypothesis(pair['base'], h, orientation) == pair['derivative'] for h in hypotheses]
         if True not in accounted_for_by_each:
             return False
     return True
@@ -285,13 +285,12 @@ def reduce_hypotheses(hypotheses, all_pairs, orientation='product'):
                     hypotheses[-(i+1)] = 'purgeable'
                     reversed_hypotheses[i] = 'purgeable'
 
-
     hypotheses = [h for h in hypotheses if h != 'purgeable']
 
     # Second step: check for smallest number of adequate hypotheses
     combinations = itertools.chain.from_iterable([itertools.combinations(hypotheses, n) for n in range(1,len(hypotheses))])
     for combo in combinations:
-        if account_for_all(combo, all_pairs):
+        if account_for_all(combo, all_pairs, orientation):
             # winner found! Add missing contexts to their respective winners
             for pair in all_pairs:
                 for hypothesis in combo:
@@ -335,13 +334,6 @@ def add_grammar(sublexicon, constraints, l1_mult = 0.0, l2_mult = 0.001):
 
     return sublexicon
 
-
-def predict_from_one_base_form(base_form, sublexicon):
-    candidate = apply_hypothesis(base_form, sublexicon)
-    # print(candidate)
-    probability = phoment.new_form_probability(base_form, sublexicon.megatableau)
-
-    return (candidate, probability)
 
 
 # def create_mapping_tableau(sublexicons, megatableaux):

@@ -1,5 +1,6 @@
 """
-Command-line interface for using a grammar to predict novel forms using Sublexical Morphology
+Command-line interface for using a grammar to predict novel forms 
+using Sublexical Morphology
 """
 
 import paradigms
@@ -21,7 +22,8 @@ args = parser.parse_args()
 #####################################################################
 
 # Load lexicon with grammar into memory
-with open('datasets/{}/{}.pkl'.format(args.language_name, args.language_name), 'rb') as lexfile:
+with open('datasets/{}/{}.lexicon'.format(args.language_name, 
+                                          args.language_name), 'rb') as lexfile:
     lex = pickle.load(lexfile)
 
     # Make predictions
