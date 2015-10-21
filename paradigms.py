@@ -103,7 +103,7 @@ class Lexicon:                                                                  
            pre_reduction_cutoff=None, post_reduction_cutoff=None,
            psublexicon_size_cutoff=None):
         print('Initializing aligner...')
-        self.aligner = aligner.Aligner(feature_file=features_filename, 
+        self.aligner = aligner.Aligner(feature_file=features_filename,
                                    sub_penalty=4.0, tolerance=1.0)              #TO-DO: Remove these magic numbers
 
         print('Loading training file...')
@@ -205,7 +205,7 @@ class Lexicon:                                                                  
                     predictions[lexeme][deriv_cell] = (
                         self.predict_candidate_distribution(
                             self.test_data[lexeme], deriv_cell))
-        
+
         self.test_predictions = predictions
         print(self.test_predictions)
 
@@ -219,7 +219,7 @@ class Lexicon:                                                                  
             arbitrary_base_cell = next(iter(ps.operations))
             base_form = next(iter(givens[arbitrary_base_cell]))                 #TO-DO: remove this assumption that there's only one form with a particular meaning in the test set
             operation = ps.operations[arbitrary_base_cell]
-            candidate = hypothesize.apply_operation(base_form, operation, 
+            candidate = hypothesize.apply_operation(base_form, operation,
                                                     self.change_orientation)
 
             ## assign p(bases|ps)
@@ -251,13 +251,13 @@ class Lexicon:                                                                  
 
 
     # def predict_candidate_distribution(self, givens, deriv_cell):
-    #     candidates = {base_cell: 
+    #     candidates = {base_cell:
     #                       self.predict_from_base_distribution(givens[base_cell],
     #                                                           base_cell,
     #                                                           deriv_cell)
     #                                 for base_cell in givens}
 
-        
+
     #     # TO-DO: 1) check the below to make sure it's not doing anything crazy,
     #     #        2) figure out how to deal with 'incompatible's
 
@@ -308,7 +308,7 @@ class Lexicon:                                                                  
 
 
 
-    # def predict_from_base_distribution(self, 
+    # def predict_from_base_distribution(self,
     #                                   base_distribution, base_cell, deriv_cell):
     #     base_predictions = {base: {} for base in base_distribution}
     #     # print()
@@ -379,7 +379,7 @@ class Lexicon:                                                                  
     #         testout.write(outstr)
 
     def save_predictions(self, language_name):
-        with open('datasets/{}/{}_predictions.txt'.format(language_name, 
+        with open('datasets/{}/{}_predictions.txt'.format(language_name,
                                           language_name), 'w') as testout:
             testout.write('lexeme\t'+'\t'.join([str(cell) for cell in self.cells])+'\n')
             for lexeme in self.test_predictions:
@@ -408,9 +408,9 @@ class Lexicon:                                                                  
                                   self.cells[base_cell][lexeme].form.split(' '),
                                 self.cells[deriv_cell][lexeme].form.split(' ')):
                     final_score = score/self.aligner.check_cohesion(alignment)  #TO-DO: should this divide by the length of the alignment?
-                    alignments.append({'alignment':alignment, 
-                                       'probability': 1.0, 
-                                       'lexeme': lexeme, 
+                    alignments.append({'alignment':alignment,
+                                       'probability': 1.0,
+                                       'lexeme': lexeme,
                                        'score': final_score})
                 alignments.sort(key=lambda x: x['score'])
                 alignments.reverse()
@@ -422,7 +422,7 @@ class Lexicon:                                                                  
 
         print('Reducing hypotheses...')
         bsublexicons = hypothesize.create_and_reduce_hypotheses(
-                     all_alignments, pre_reduction_cutoff, 
+                     all_alignments, pre_reduction_cutoff,
                      orientation=self.change_orientation)
         print('Hypotheses have been reduced.')
 
@@ -433,13 +433,13 @@ class Lexicon:                                                                  
         bsublexicons.sort(key=lambda h: h.total_probability, reverse=True)
 
         if post_reduction_cutoff:
-            bsublexicons = ([bs for bs in bsublexicons 
+            bsublexicons = ([bs for bs in bsublexicons
                             if bs.total_probability > post_reduction_cutoff])
 
         return bsublexicons
 
 
-    def find_psublexicons(self, bsublex_dict, deriv_cell, 
+    def find_psublexicons(self, bsublex_dict, deriv_cell,
                           psublexicon_size_cutoff):
         """This function first organizes lexemes by their conjunctions of
         base sublexicon operations, and then creates a PSublexicon for each
@@ -450,7 +450,7 @@ class Lexicon:                                                                  
             for bsublex in bsublex_dict[base_cell]:
                 for af in bsublex.associated_forms:
                     lexeme_dict[af['lexeme']].append(
-                      ((base_cell, bsublex.changes), 
+                      ((base_cell, bsublex.changes),
                        Word(af['base'],
                             af['lexeme'],
                             base_cell,
@@ -485,7 +485,10 @@ class Lexicon:                                                                  
                            for change, word in psublexicons[ps][lex]])))
         psublexicons = classy_psublexicons
 
-        psl_sizes = [sum([w.frequency for w in psl.words]) 
+        ## commented out: version that uses token frequencies
+        # psl_sizes = [sum([w.frequency for w in psl.words])
+        #              for psl in psublexicons]
+        psl_sizes = [sum([1.0 for w in psl.words if w.frequency > 0.0]) 
                      for psl in psublexicons]
         frequency_sum = sum(psl_sizes)
         for psl, size in zip(psublexicons, psl_sizes):
@@ -498,7 +501,7 @@ class Lexicon:                                                                  
                         ps.zero_frequency_words.append(word)
 
         if psublexicon_size_cutoff:
-            psublexicons = ([ps for ps in psublexicons 
+            psublexicons = ([ps for ps in psublexicons
                             if len(ps.lexemes) > psublexicon_size_cutoff])
 
         return psublexicons
@@ -514,7 +517,7 @@ class Lexicon:                                                                  
 
     def create_cells(self):
         for w in self.wordlist:
-            fval_tuple = tuple([(feature, w.sfeatures[feature]) for feature 
+            fval_tuple = tuple([(feature, w.sfeatures[feature]) for feature
                          in w.sfeatures if feature != 'lexeme'])
             self.cells[fval_tuple][w.lexeme] = w
 
@@ -531,7 +534,7 @@ class Word:
 
     def __repr__(self):
         if type(self.cell) == dict:
-            cell_repr = '\t'.join([key+': ' + self.cell[key] for key 
+            cell_repr = '\t'.join([key+': ' + self.cell[key] for key
                   in self.cell])
         elif type(self.cell) == tuple:
             cell_repr = str(self.cell)
@@ -550,7 +553,7 @@ class PSublexicon:
     """Paradigm sublexicon: a sublexicon for a particular derivative cell
     across all base cells
     """
-    def __init__(self, deriv_cell=None, operations=[], 
+    def __init__(self, deriv_cell=None, operations=[],
                  lexemes=[], words=[]):
         self.deriv_cell = deriv_cell
         self.operations = operations # {base_cell: [Change, Change...]}
@@ -597,8 +600,8 @@ class PSublexicon:
                 if len(line) > 1:
                     con_str, cell_str = line
                     con_re = re.compile(con_str)
-                    cell = tuple([tuple([feature.split(':')[0], 
-                                 feature.split(':')[1]]) 
+                    cell = tuple([tuple([feature.split(':')[0],
+                                 feature.split(':')[1]])
                                     for feature in cell_str.split(',')])
                     constraints.append((con_re, cell))
         return constraints
@@ -612,14 +615,14 @@ class PSublexicon:
 
     def make_tableau_from_words(self, word_to_withhold=None):
         for w in self.words:
-            if not (word_to_withhold[0] == w.lexeme and 
+            if not (word_to_withhold[0] == w.lexeme and
                     word_to_withhold[1] == w.cell):
                 entry = w.form
                 entry_info = [w.frequency, w.violations, 0]
                 self.tableau['dummy_ur'][entry] = entry_info
 
         for w in self.zero_frequency_words:
-            if not (word_to_withhold[0] == w.lexeme and 
+            if not (word_to_withhold[0] == w.lexeme and
                     word_to_withhold[1] == w.cell):
                 entry = w.form
                 entry_info = [0, w.violations, 0]
@@ -633,12 +636,12 @@ class PSublexicon:
             # TO-DO: also sort forms by base cell
             for w in self.words:
                 line = '{}\t{}\t'.format(w.form, w.cell)
-                line += '\t'.join([str(w.violations[i]) if i in w.violations 
+                line += '\t'.join([str(w.violations[i]) if i in w.violations
                                else '0' for i,c in enumerate(self.constraints)])
                 tabfile.write(line+'\n')
             tabfile.write('\n\n')
             for w in self.zero_frequency_words:
                 line = '{}\t{}\t'.format(w.form, w.cell)
-                line += '\t'.join([str(w.violations[i]) if i in w.violations 
+                line += '\t'.join([str(w.violations[i]) if i in w.violations
                                else '0' for i,c in enumerate(self.constraints)])
                 tabfile.write(line+'\n')
