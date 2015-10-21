@@ -60,11 +60,25 @@ def find_violations(word, constraints, base_cell=None):
 
     return violations
 
-def new_form_probability(form, psublexicon, base_cell):
-    viols_dict = find_violations(form, psublexicon.constraints, base_cell)
-    viols_array = np.array([viols_dict[i] if i in viols_dict else 0 
-                            for i in range(len(psublexicon.weights))])
-    eharmony = math.e ** np.dot(viols_array, psublexicon.weights)
+# def new_form_probability(form, psublexicon, base_cell):
+#     viols_dict = find_violations(form, psublexicon.constraints, base_cell)
+#     viols_array = np.array([viols_dict[i] if i in viols_dict else 0 
+#                             for i in range(len(psublexicon.weights))])
+#     eharmony = math.e ** np.dot(viols_array, psublexicon.weights)
+#     z = z_score(psublexicon.tableau, 'dummy_ur') + eharmony # UR is 'dummy_ur'  #TO-DO: determine whether this calc is appropriate
+
+#     return eharmony / z
+
+
+def testing_bases_probability(givens, psublexicon):
+    harmony = 0
+    for constraint, weight in zip(psublexicon.constraints, psublexicon.weights):
+        if constraint[1] in givens:
+            these_forms = givens[constraint[1]]
+            form = next(iter(these_forms))                                      #TO-DO: remove this assumption that there's only one form with a particular meaning in the test set
+            violation = len(constraint[0].findall(form))
+            harmony += (weight * violation)
+    eharmony = math.e ** harmony
     z = z_score(psublexicon.tableau, 'dummy_ur') + eharmony # UR is 'dummy_ur'  #TO-DO: determine whether this calc is appropriate
 
     return eharmony / z

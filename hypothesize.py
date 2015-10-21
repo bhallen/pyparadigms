@@ -82,6 +82,7 @@ def create_and_reduce_hypotheses(alignments, pre_reduction_cutoff, orientation='
     size_total = sum(sublexicon_sizes)
     for h, size in zip(reduced_hypotheses, sublexicon_sizes):
         h.relative_size = size / size_total
+        h.total_probability = sum([af['probability'] for af in h.associated_forms])
 
     return reduced_hypotheses
 
@@ -187,12 +188,7 @@ def add_nones(word):
             return list(yield_it(word))
 
 
-def apply_hypothesis(word, hypothesis, orientation='product'):
-    """Apply the changes in a hypothesis to a (base) word. Base word can be either
-    a list of segments (no Nones) or a space-spaced string.
-    """
-
-    def apply_change(current_base, current_derivative, change):
+def apply_change(current_base, current_derivative, change, orientation):
         """Use the given set of changes to derive a new form from the base word.
         May be only one intermediate step in the application of multiple
         changes associated with a single hypothesis/sublexicon.
@@ -218,6 +214,12 @@ def apply_hypothesis(word, hypothesis, orientation='product'):
 
         return (changed_base, changed_derivative)
 
+
+def apply_hypothesis(word, hypothesis, orientation='product'):
+    """Apply the changes in a hypothesis to a (base) word. Base word can be either
+    a list of segments (no Nones) or a space-spaced string.
+    """
+
     current_base = list(add_nones(word))
     current_derivative = list(add_nones(word))
 
@@ -225,7 +227,24 @@ def apply_hypothesis(word, hypothesis, orientation='product'):
         for change in hypothesis.changes:
             # if word == 'n e p e n' and change.change_type=='mutate' and change.input_material==['b']:
             #     pdb.set_trace()
-            current_base, current_derivative = apply_change(current_base, current_derivative, change)
+            current_base, current_derivative = apply_change(current_base, current_derivative, change, orientation)
+    except:
+        return 'incompatible'
+
+    return linearize_word(current_derivative)
+
+
+def apply_operation(word, operation, orientation='product'):
+    """Apply the changes in a psublexicon's operation to a (base) word. Base word can be either
+    a list of segments (no Nones) or a space-spaced string.
+    """
+
+    current_base = list(add_nones(word))
+    current_derivative = list(add_nones(word))
+
+    try:
+        for change in operation:
+            current_base, current_derivative = apply_change(current_base, current_derivative, change, orientation)
     except:
         return 'incompatible'
 

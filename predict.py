@@ -27,7 +27,7 @@ with open('datasets/{}/{}.lexicon'.format(args.language_name,
     lex = pickle.load(lexfile)
 
     # Make predictions
-    lex.predict(args.language_name)
+    lex.predict_from_testing_data(args.language_name)
 
     # Save predictions to file
     lex.save_predictions(args.language_name)

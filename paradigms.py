@@ -39,8 +39,6 @@ import pickle
 
 import pdb
 
-PRE_REDUCTION_CUTOFF = None
-
 
 class Lexicon:                                                                  #TO-DO: consider renaming InflectionalSystem?
     def __init__(self):
@@ -49,14 +47,14 @@ class Lexicon:                                                                  
         self.cells = defaultdict(dict)
         self.lexemes = []
         self.mappings = defaultdict(dict) # morphological operations from b to d
-        self.grammars = {c: None for c in self.cells}
         self.aligner = None
         self.psublexicons = {} # {deriv_cell: [PSublexicons]}
         self.test_data = None
         self.test_predictions = None
         self.relative_size = None
+        self.change_orientation = 'source'                                      #TO-DO: add param for this
 
-    def read_training_file(self, training_filename):
+    def read_training_file(self, training_filename, form_to_withhold):
         """See documentation for detailed formatting requirements.
         In short, first line must he headers, and the order of columns
         must be form, lexeme, sfeatures..., (frequency)
@@ -81,56 +79,97 @@ class Lexicon:                                                                  
                         word.sfeatures[sfeature] = cols[i+2]
                     if frequency_col:
                         word.frequency = cols[-1]
+                    if form_to_withhold:
+                        if self.should_be_withheld(word, form_to_withhold):
+                            continue
                     self.wordlist.append(word)
                     if word.lexeme not in self.lexemes:
                         self.lexemes.append(word.lexeme)
 
-    def learn(self, training_filename, constraints_filename, features_filename):
+    def should_be_withheld(self, word, lexeme_and_cell):
+        if word.lexeme == lexeme_and_cell[0]:
+            for sfeature, value in lexeme_and_cell[1]:
+                if word.sfeatures[sfeature] == value:
+                    continue
+                else:
+                    return False
+        else:
+            return False
+        return True
+
+
+    def learn(self, training_filename, constraints_filename, features_filename,
+           just_return_cells=False, form_to_withhold=None, skip_grammars=False,
+           pre_reduction_cutoff=None, post_reduction_cutoff=None,
+           psublexicon_size_cutoff=None):
         print('Initializing aligner...')
         self.aligner = aligner.Aligner(feature_file=features_filename, 
                                    sub_penalty=4.0, tolerance=1.0)              #TO-DO: Remove these magic numbers
 
         print('Loading training file...')
-        self.read_training_file(training_filename)
+        self.read_training_file(training_filename, form_to_withhold)
+
 
         ## Create dict of *OBSERVED* MPS tuples and their forms
         print('Compiling information about available cells...')
         self.create_cells()
 
+        if just_return_cells:
+            return [c for c in self.cells]
+
         for deriv_cell in self.cells:
-            print('Learning grammar for the derivative cell {}...'
+            print('Learning about the derivative cell {}...'
                   .format(deriv_cell))
             for base_cell in self.cells:
                 if base_cell != deriv_cell:
                     print('Learning base sublexicons from {} to {}...'
                            .format(base_cell, deriv_cell))
                     self.mappings[deriv_cell][base_cell] = \
-                           self.find_bd_sublexicons(base_cell, deriv_cell)
+                           self.find_bd_sublexicons(base_cell, deriv_cell,
+                                                    pre_reduction_cutoff,
+                                                    post_reduction_cutoff)
 
             print('Finding this derivative cell\'s paradigm sublexicons...')
             this_deriv_psublexicons = self.find_psublexicons(
                                                       self.mappings[deriv_cell],
-                                                      deriv_cell)
-            print('Learning a MaxEnt HG for each paradigm sublexicon...')
-            for ps in this_deriv_psublexicons:
-                ps.learn_grammar(constraints_filename)
+                                                      deriv_cell,
+                                                      psublexicon_size_cutoff)
 
-            self.psublexicons[deriv_cell] = this_deriv_psublexicons
+            if skip_grammars:
+                self.psublexicons[deriv_cell] = this_deriv_psublexicons
+            else:
+                print('Learning a MaxEnt HG for each paradigm sublexicon...')
+                for ps in this_deriv_psublexicons:
+                    ps.learn_grammar(constraints_filename)
+
+                self.psublexicons[deriv_cell] = this_deriv_psublexicons
 
 
 
 
 
 
-    def save_lexicon(self, language_name):
-        with open('datasets/{}/{}.lexicon'.format(
-                          language_name, language_name), 'wb') as lexfile:
+    def save_lexicon(self, language_name, suffix):
+        with open('datasets/{}/{}_{}.lexicon'.format(
+                          language_name, language_name, suffix
+                          ), 'wb') as lexfile:
             pickle.dump(self, lexfile)
 
 
-    def predict(self, language_name):
+    def predict_from_testing_data(self, language_name):
         self.read_testing_file(language_name)
         self.complete_test_data()
+
+    def predict_single_word(self, word_tuple):
+        """Tuple (lexeme, cell)
+        """
+        givens = {} # needs to be {cell: {form: probability}}
+        for cell in self.cells:
+            for lexeme in self.cells[cell]:
+                if lexeme == word_tuple[0]:
+                    word = self.cells[cell][lexeme]
+                    givens[cell] = {word.form: word.frequency}
+        return self.predict_candidate_distribution(givens, word_tuple[1])
 
     def read_testing_file(self, language_name):
         """(** formatting conventions **)"""
@@ -168,113 +207,199 @@ class Lexicon:                                                                  
                             self.test_data[lexeme], deriv_cell))
         
         self.test_predictions = predictions
-        # print(self.test_predictions)
+        print(self.test_predictions)
 
 
     def predict_candidate_distribution(self, givens, deriv_cell):
-        candidates = {base_cell: 
-                          self.predict_from_base_distribution(givens[base_cell],
-                                                              base_cell,
-                                                              deriv_cell)
-                                    for base_cell in givens}
+        psublexicons = self.psublexicons[deriv_cell]
+        candidates = [] # one per psublexicon
+        ps_probs = [] # one per psublexicon: p(psublexicon|bases)
+        for ps in psublexicons:
+            ## generate a candidate
+            arbitrary_base_cell = next(iter(ps.operations))
+            base_form = next(iter(givens[arbitrary_base_cell]))                 #TO-DO: remove this assumption that there's only one form with a particular meaning in the test set
+            operation = ps.operations[arbitrary_base_cell]
+            candidate = hypothesize.apply_operation(base_form, operation, 
+                                                    self.change_orientation)
 
-        # below hasn't been updated...
+            ## assign p(bases|ps)
+            if candidate != 'incompatible':
+                bases_prob = self.get_bases_prob(givens, ps)
 
-        ## Massage dict into {candidate: pred_prob}
-        arranged_dict = defaultdict(lambda:1.0)
-        for base in candidates:
-            for base_form in candidates[base]:
-                for deriv_form in candidates[base][base_form]:
-                    arranged_dict[deriv_form] *= candidates[base][base_form][deriv_form] ## TO-DO Determine how best to deal with 0s here
+                ## p(ps|bases) \propto bases_prob * ps.relative_size
+                candidates.append(candidate)
+                ps_probs.append(bases_prob * ps.relative_size)
 
-        # print(candidates)
-        psum = sum([arranged_dict[c] for c in arranged_dict])
-        for c in arranged_dict:
-            arranged_dict[c] /= psum
+        ## normalize psublexicon probabilities
+        ps_probs = np.array(ps_probs)
+        ps_probs = ps_probs / ps_probs.sum()
 
-        # print()
-        # print(arranged_dict)
-        return arranged_dict
+        ## add probabilities of same-candidate psublexicons
+        unique_ps_probs = defaultdict(float)
+        for candidate, ps_prob in zip(candidates, ps_probs):
+            unique_ps_probs[candidate] += ps_prob
 
-
-
-    def predict_from_base_distribution(self, 
-                                      base_distribution, base_cell, deriv_cell):
-        base_predictions = {base: {} for base in base_distribution}
-        # print()
-        for base_form in base_distribution:
-            # print(base_form)
-            # print(self.psublexicons)
-            for psl in self.psublexicons[deriv_cell]:
-                # print(psl)
-                candidate, probability = self.predict_from_one_base_form(
-                                                                base_form,
-                                                                psl,
-                                                                base_cell)
-
-                base_predictions[base_form][candidate] = (
-                    ## p(base|sublexicon)p(sublexicon)
-                    probability * psl.relative_size)
-
-        # print(base_predictions)
-        return base_predictions
+        return unique_ps_probs
 
 
-    def predict_from_one_base_form(self, base_form, psublexicon, base_cell):
-        candidate = self.apply_appropriate_operations(
-                                              base_form, psublexicon, base_cell)
-        probability = phoment.new_form_probability(
-                                              base_form, psublexicon, base_cell)
 
-        return (candidate, probability)
+    def get_bases_prob(self, givens, ps):
+        """Calculate p(givens|ps)
+        """
+        return phoment.testing_bases_probability(givens, ps)
 
 
-    def apply_appropriate_operations(self, base_form, psublexicon, base_cell):
-        current_base = list(hypothesize.add_nones(base_form))
-        current_derivative = list(hypothesize.add_nones(base_form))
-        changes = psublexicon.operations[base_cell]
 
-        try:
-            for change in changes:
-                ## !! hypothesize.apply_change was reeeeally slow when taken out
-                ## of apply_hypothesis (while running learn.py). Figure out why
-                ## to get this line below to work.
-                current_base, current_derivative = hypothesize.apply_change(
-                                       current_base, current_derivative, change)
-        except:
-            return 'incompatible'
+    # def predict_candidate_distribution(self, givens, deriv_cell):
+    #     candidates = {base_cell: 
+    #                       self.predict_from_base_distribution(givens[base_cell],
+    #                                                           base_cell,
+    #                                                           deriv_cell)
+    #                                 for base_cell in givens}
 
-        return hypothesize.linearize_word(current_derivative)
+        
+    #     # TO-DO: 1) check the below to make sure it's not doing anything crazy,
+    #     #        2) figure out how to deal with 'incompatible's
+
+    #     ## Massage into {candidate: [eharmonies given by each base]}
+    #     base_order = []
+    #     i = 0
+    #     for base in candidates:
+    #         for base_form in candidates[base]:
+    #             base_order.append((i, base, base_form))
+    #             i += 1
+    #     pred_matrix = []
+
+    #     deriv_form_order = []
+    #     for i, base, base_form in base_order:
+    #         for deriv_form in candidates[base][base_form]:
+    #             if deriv_form in deriv_form_order:
+    #                 j = deriv_form_order.index(deriv_form)
+    #                 pred_matrix[j][i] = candidates[base][base_form][deriv_form]
+    #             else:
+    #                 deriv_form_order.append(deriv_form)
+    #                 pred_matrix.append([0.0]*len(base_order))
+    #                 pred_matrix[-1][i] = candidates[base][base_form][deriv_form]
+
+    #     print(candidates)
 
 
-    def test_predictions(self):
-        with open('predictions_test.txt', 'w') as testout:
-            outstr = 'CELL\tLEXEME\tOUTPUT\tOBS\tPRED\n'
-            for lexeme in self.test_data:
-                outstr += '\t'.join([str(lexeme[0]),lexeme[1]]) + '\t'
-                weighted_prob_sums = []
-                obs_probs = []
-                for output in testing_dict[lexeme]:
-                    obs_probs.append(testing_dict[lexeme][output]['observed'])
-                    weighted_prob_sum = 0
-                    for feature in weight_dict:
-                        if feature != (lexeme[0],):
-                            weighted_prob_sum += testing_dict[lexeme][output][feature]*weight_dict[feature] # cond.prob * weight
-                    weighted_prob_sums.append(weighted_prob_sum)
-                Z = sum(weighted_prob_sums)
-                marginal_probs = [wps/Z for wps in weighted_prob_sums]
-                marginal_probs = zip([output for output in testing_dict[lexeme]],obs_probs,marginal_probs) # FINAL element is predicted prob!
-                marginal_probs.sort(key=lambda tup: tup[2], reverse=True)
+    #     ## normalize to probabilities, apply smoothing, then normalize again
+    #     pred_matrix = np.array(pred_matrix)
+    #     pred_matrix = pred_matrix / pred_matrix.sum(axis=0)
+    #     pred_matrix = pred_matrix + 0.001                                       #TO-DO: parameterize smoothing! and maybe do it before adding p(sublexicon)?
+    #     pred_matrix = pred_matrix / pred_matrix.sum(axis=0)
 
-                outstr += '\n\t\t'.join([output+'\t'+str(obs)+'\t'+str(pred) for output,obs,pred in marginal_probs]) + '\n'
+    #     ## Massage dict into {candidate: pred_prob}
+    #     arranged_dict = defaultdict(lambda:1.0)
+    #     for base in candidates:
+    #         for base_form in candidates[base]:
+    #             for deriv_form in candidates[base][base_form]:
+    #                 arranged_dict[deriv_form] *= candidates[base][base_form][deriv_form] ## TO-DO Determine how best to deal with 0s here
 
-            testout.write(outstr)
+    #     # print(candidates)
+    #     psum = sum([arranged_dict[c] for c in arranged_dict])
+    #     for c in arranged_dict:
+    #         arranged_dict[c] /= psum
+
+    #     print()
+    #     print(arranged_dict)
+    #     return arranged_dict
+
+
+
+    # def predict_from_base_distribution(self, 
+    #                                   base_distribution, base_cell, deriv_cell):
+    #     base_predictions = {base: {} for base in base_distribution}
+    #     # print()
+    #     for base_form in base_distribution:
+    #         # print(base_form)
+    #         # print(self.psublexicons)
+    #         for psl in self.psublexicons[deriv_cell]:
+    #             # print(psl)
+    #             candidate, probability = self.predict_from_one_base_form(
+    #                                                             base_form,
+    #                                                             psl,
+    #                                                             base_cell)
+    #             if candidate != 'incompatible':
+    #                 base_predictions[base_form][candidate] = (
+    #                     ## p(base|sublexicon)p(sublexicon)
+    #                     probability * psl.relative_size)
+
+    #     print(base_predictions)
+    #     return base_predictions
+
+
+    # def predict_from_one_base_form(self, base_form, psublexicon, base_cell):
+    #     candidate = self.apply_appropriate_operations(
+    #                                           base_form, psublexicon, base_cell)
+    #     probability = phoment.new_form_probability(
+    #                                           base_form, psublexicon, base_cell)
+
+    #     return (candidate, probability)
+
+
+    # def apply_appropriate_operations(self, base_form, psublexicon, base_cell):
+    #     current_base = list(hypothesize.add_nones(base_form))
+    #     current_derivative = list(hypothesize.add_nones(base_form))
+    #     changes = psublexicon.operations[base_cell]
+
+    #     try:
+    #         for change in changes:
+    #             current_base, current_derivative = hypothesize.apply_change(
+    #                                    current_base, current_derivative, change,
+    #                                    self.change_orientation)
+    #     except:
+    #         return 'incompatible'
+
+    #     return hypothesize.linearize_word(current_derivative)
+
+
+    # def test_predictions(self):
+    #     with open('predictions_test.txt', 'w') as testout:
+    #         outstr = 'CELL\tLEXEME\tOUTPUT\tOBS\tPRED\n'
+    #         for lexeme in self.test_data:
+    #             outstr += '\t'.join([str(lexeme[0]),lexeme[1]]) + '\t'
+    #             weighted_prob_sums = []
+    #             obs_probs = []
+    #             for output in testing_dict[lexeme]:
+    #                 obs_probs.append(testing_dict[lexeme][output]['observed'])
+    #                 weighted_prob_sum = 0
+    #                 for feature in weight_dict:
+    #                     if feature != (lexeme[0],):
+    #                         weighted_prob_sum += testing_dict[lexeme][output][feature]*weight_dict[feature] # cond.prob * weight
+    #                 weighted_prob_sums.append(weighted_prob_sum)
+    #             Z = sum(weighted_prob_sums)
+    #             marginal_probs = [wps/Z for wps in weighted_prob_sums]
+    #             marginal_probs = zip([output for output in testing_dict[lexeme]],obs_probs,marginal_probs) # FINAL element is predicted prob!
+    #             marginal_probs.sort(key=lambda tup: tup[2], reverse=True)
+
+    #             outstr += '\n\t\t'.join([output+'\t'+str(obs)+'\t'+str(pred) for output,obs,pred in marginal_probs]) + '\n'
+
+    #         testout.write(outstr)
 
     def save_predictions(self, language_name):
-        pass
+        with open('datasets/{}/{}_predictions.txt'.format(language_name, 
+                                          language_name), 'w') as testout:
+            testout.write('lexeme\t'+'\t'.join([str(cell) for cell in self.cells])+'\n')
+            for lexeme in self.test_predictions:
+                testout.write(lexeme)
+                for cell in self.cells:
+                    testout.write('\t')
+                    if cell in self.test_predictions[lexeme]:
+                        candidates = self.test_predictions[lexeme][cell]
+                        ordered_cands = [(c,candidates[c]) for c in candidates]
+                        ordered_cands.sort(key=lambda x: x[1], reverse=True)
+                        ordered_cands = [c for c in ordered_cands if c[1] > 0.0001]
+                        cands_str = ', '.join(['{} ({})'.format(c[0], c[1]) for c in ordered_cands])
+                        testout.write(cands_str)
+                testout.write('\n')
 
 
-    def find_bd_sublexicons(self, base_cell, deriv_cell):
+
+
+    def find_bd_sublexicons(self, base_cell, deriv_cell, pre_reduction_cutoff,
+                                                        post_reduction_cutoff):
         all_alignments = []
         for lexeme in self.cells[deriv_cell]:
             if lexeme in self.cells[base_cell]:
@@ -291,32 +416,35 @@ class Lexicon:                                                                  
                 alignments.reverse()
 
 
-                #TO-DO: only add up to MAXALIGNMENTS
-                all_alignments += alignments
+                all_alignments += alignments[:2]                                #TO-DO: only add up to MAXALIGNMENTS instead of 2
 
         print('Number of alignments: {}'.format(str(len(all_alignments))))
 
         print('Reducing hypotheses...')
         bsublexicons = hypothesize.create_and_reduce_hypotheses(
-                     all_alignments, PRE_REDUCTION_CUTOFF, orientation='source')
+                     all_alignments, pre_reduction_cutoff, 
+                     orientation=self.change_orientation)
         print('Hypotheses have been reduced.')
 
         ## Should NOT add zero frequency forms yetsince associated words are
         ## used to determine paradigm sublexicons
         print('Number of base sublexicons: {}'.format(str(len(bsublexicons))))
 
+        bsublexicons.sort(key=lambda h: h.total_probability, reverse=True)
+
+        if post_reduction_cutoff:
+            bsublexicons = ([bs for bs in bsublexicons 
+                            if bs.total_probability > post_reduction_cutoff])
+
         return bsublexicons
 
 
-    def find_psublexicons(self, bsublex_dict, deriv_cell):
+    def find_psublexicons(self, bsublex_dict, deriv_cell, 
+                          psublexicon_size_cutoff):
         """This function first organizes lexemes by their conjunctions of
         base sublexicon operations, and then creates a PSublexicon for each
         unique combination of base sublexicon operation conjunctions.
         """
-
-        print('Why does the 1s grammar often end up with just 1 or 2 sublexicons?'
-              +' Sometimes 0, eek! Seems to be because of bad operation positions')
-
         lexeme_dict = defaultdict(list) # {lexeme: (base_cell, [Changes])}
         for base_cell in bsublex_dict:
             for bsublex in bsublex_dict[base_cell]:
@@ -368,6 +496,10 @@ class Lexicon:                                                                  
                 if ps != other_ps:
                     for word in other_ps.words:
                         ps.zero_frequency_words.append(word)
+
+        if psublexicon_size_cutoff:
+            psublexicons = ([ps for ps in psublexicons 
+                            if len(ps.lexemes) > psublexicon_size_cutoff])
 
         return psublexicons
 
@@ -425,7 +557,6 @@ class PSublexicon:
         self.lexemes = lexemes # Formerly: {lexeme: {base_cell: Word}}
         self.words = words
         self.zero_frequency_words = []
-        self.grammar = None
         self.constraints = None
         self.violations = None
         self.tableau = {'dummy_ur': {}}
@@ -438,13 +569,14 @@ class PSublexicon:
     def __str__(self):
         return repr(self)
 
-    def learn_grammar(self, constraints_filename):
+    def learn_grammar(self, constraints_filename, word_to_withhold=None):
+        self.tableau = {'dummy_ur': {}} # re-initialize tableau for CV
         self.constraints = self.read_constraints_file(constraints_filename)
         self.gaussian_priors = {}
         self.weights = np.zeros(len(self.constraints))
 
         self.add_constraints_to_words()
-        self.make_tableau_from_words()
+        self.make_tableau_from_words(word_to_withhold)
         self.weights = phoment.learn_weights(self.weights, self.tableau)
 
         # self.save_tableau_to_file()                                           # TO-DO: enable, add parameters
@@ -478,16 +610,20 @@ class PSublexicon:
         for w in self.zero_frequency_words:
             w.violations = phoment.find_violations(w, self.constraints)
 
-    def make_tableau_from_words(self):
+    def make_tableau_from_words(self, word_to_withhold=None):
         for w in self.words:
-            entry = w.form
-            entry_info = [w.frequency, w.violations, 0]
-            self.tableau['dummy_ur'][entry] = entry_info
+            if not (word_to_withhold[0] == w.lexeme and 
+                    word_to_withhold[1] == w.cell):
+                entry = w.form
+                entry_info = [w.frequency, w.violations, 0]
+                self.tableau['dummy_ur'][entry] = entry_info
 
         for w in self.zero_frequency_words:
-            entry = w.form
-            entry_info = [0, w.violations, 0]
-            self.tableau['dummy_ur'][entry] = entry_info
+            if not (word_to_withhold[0] == w.lexeme and 
+                    word_to_withhold[1] == w.cell):
+                entry = w.form
+                entry_info = [0, w.violations, 0]
+                self.tableau['dummy_ur'][entry] = entry_info
 
     def save_tableau_to_file(self):
         with open('tableau_{}.csv'.format(str(self)), 'w') as tabfile:
