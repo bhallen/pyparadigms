@@ -1,0 +1,5 @@
+form	lexeme	cell
+y o m a s	ytake	2sgPres
+y w e n t o	ycount	1sgPres
+y o m e i s	yeat	2plPres
+y o m e n	yeat	3plPres

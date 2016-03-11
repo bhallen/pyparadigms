@@ -31,7 +31,10 @@ lex.learn('datasets/{}/{}_training.txt'.format(args.language_name,
           'datasets/{}/{}_constraints.txt'.format(args.language_name, 
                                                args.language_name),
           'datasets/{}/{}_features.txt'.format(args.language_name, 
-                                               args.language_name))
+                                               args.language_name),
+          pre_reduction_cutoff=100,
+          post_reduction_cutoff=100,
+          psublexicon_size_cutoff=35)
 
 # Save grammarized Lexicon to datasets/args.language_name
 lex.save_lexicon(args.language_name)

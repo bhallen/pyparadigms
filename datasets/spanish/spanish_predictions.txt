@@ -1,0 +1,4 @@
+lexeme	(('cell', '1plPres'),)	(('cell', '3plPres'),)	(('cell', '1sgPres'),)	(('cell', '2plPres'),)	(('cell', '2sgPres'),)	(('cell', '3sgPres'),)
+ytake	y o m a m o s (1.0)	y o m a n (1.0)	y o m o (1.0)	y o m a i s (1.0)		y o m a (1.0)
+yeat	y o m e i m o s (0.9999182822266489)		y o m e o (1.0)		y o m e s (0.9998134898690411), y o m e e s (0.0001865101309589396)	y o m e (0.999813707739173), y o m e e (0.00018629226082701804)
+ycount	y w e n t a m o s (0.9980618121505219), y w e n t i m o s (0.0019381878494781697)	y w e n t a n (0.9963962175721491), y w e n t e n (0.0036037824278509125)		y w e n t a i s (0.9980634288734305), y w e n t i s (0.0019365711265695977)	y w e n t a s (0.9963973356736338), y w e n t e s (0.003602664326366304)	y w e n t a (0.9963897721855267), y w e n t e (0.00361022781447339)

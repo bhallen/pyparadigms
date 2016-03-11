@@ -1,0 +1,27 @@
+
+w e	cell:1sgPres
+o$	cell:1sgPres
+
+w e	cell:2sgPres
+a s$	cell:2sgPres
+e s$	cell:2sgPres
+
+w e	cell:3sgPres
+a$	cell:3sgPres
+e$	cell:3sgPres
+
+a m o s$	cell:1plPres
+e m o s$	cell:1plPres
+i m o s$	cell:1plPres
+
+a i s$	cell:2plPres
+e i s$	cell:2plPres
+[^e] i s$	cell:2plPres
+
+w e	cell:3plPres
+a n$	cell:3plPres
+e n$	cell:3plPres
+
+
+
+

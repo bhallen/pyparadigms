@@ -287,8 +287,10 @@ def reduce_hypotheses(hypotheses, all_pairs, orientation='product'):
     minimum number required to account for all base-derivative pairs.
     """
     reversed_hypotheses = hypotheses[::-1]
+    print('Carrying out single reduction...')
     # First step: check to see if any small hypotheses can be consumed by any single larger one
     for j, large in enumerate(hypotheses): # j = potential consumer, will be at least as large as consumed (i)
+        # print('Checking large hypothesis {} out of {}...'.format(j, len(hypotheses)))
         for i, small in enumerate(reversed_hypotheses): # can be consumed
             if small != 'purgeable' and large != 'purgeable' and small != large:
                 consumabilities = [] # could probably be refactored so as not to need to determine all consumabilities (only until failure)
@@ -302,11 +304,13 @@ def reduce_hypotheses(hypotheses, all_pairs, orientation='product'):
                         if bd not in large.associated_forms:
                             large.associated_forms.append(bd)
                     hypotheses[-(i+1)] = 'purgeable'
+                    # print('Purging small hypothesis {} out of {} (reversed)...'.format(i, len(hypotheses)))
                     reversed_hypotheses[i] = 'purgeable'
 
     hypotheses = [h for h in hypotheses if h != 'purgeable']
 
     # Second step: check for smallest number of adequate hypotheses
+    print('Moving to multiple reduction...')
     combinations = itertools.chain.from_iterable([itertools.combinations(hypotheses, n) for n in range(1,len(hypotheses))])
     for combo in combinations:
         if account_for_all(combo, all_pairs, orientation):
@@ -345,11 +349,11 @@ def add_grammar(sublexicon, constraints, l1_mult = 0.0, l2_mult = 0.001):
     sublexicon.megatableau = mt
     
     z = sorted(zip(sublexicon.weights, sublexicon.constraint_names), key=lambda x: abs(x[0]), reverse=True)
-    print()
-    print(sublexicon)
-    print(str([(af['base'], af['derivative']) for af in sublexicon.associated_forms if af['probability'] > 0.0][:8]) + '...')
-    for w,n in z[:8]:
-        print('{}\t{}'.format(str(n),str(w)))
+    # print()
+    # print(sublexicon)
+    # print(str([(af['base'], af['derivative']) for af in sublexicon.associated_forms if af['probability'] > 0.0][:8]) + '...')
+    # for w,n in z[:8]:
+    #     print('{}\t{}'.format(str(n),str(w)))
 
     return sublexicon
 
